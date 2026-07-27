@@ -1,18 +1,14 @@
 # reverse-mcp
 
-All-in-one Docker container for reverse engineering — radare2 + Ghidra headless
-wired as MCP servers, plus BinDiff, angr, AFL++, honggfuzz, and Android tools
-(apktool, jadx, frida). Usable with Claude Code, Claude Desktop, Cline, Continue,
-or any MCP client that speaks StreamableHTTP.
+Docker container for reverse engineering — radare2, Ghidra headless, angr, AFL++, honggfuzz, BinDiff, and Android tools, all wired as MCP servers behind a single HTTP endpoint. 
 
-Headless only — no GUI, no VNC. Everything runs in the terminal or through MCP.
+Works with Claude Code, Claude Desktop, Cline, Continue, or anyStreamableHTTP MCP client.
+Headless only. No GUI, no VNC.
 
 ## Requirements
 
-- Docker 23.0+ (BuildKit required — default since 23.0)
-- Docker Compose 2.0+ (`docker compose`, not `docker-compose`)
-
-Docker 18.09–22.x users: export `DOCKER_BUILDKIT=1` before building.
+- Docker 23.0+ (BuildKit required)
+- Docker Compose 2.0+
 
 ## Quick start
 
@@ -21,18 +17,16 @@ docker compose build
 docker compose up -d
 ```
 
-Container starts, gateway listens on `localhost:3100`. Drop binaries in
-`./workspace` — mounted at `/workspace` inside the container.
+Gateway listens on `localhost:3100`. Drop binaries in `./workspace` — mounted at
+`/workspace` inside the container.
 
 ```bash
-docker exec -it toolbox bash   # optional — CLI access to all tools
+docker exec -it toolbox bash   # optional shell access
 ```
 
 ## MCP
 
-**Single HTTP endpoint.** Copy the `toolbox` entry from [`.mcp.json`](.mcp.json) into
-your MCP client config. The gateway composes all toolbox MCP servers behind one
-URL — no Docker socket, no `docker exec`, no per-server registration.
+Copy the `toolbox` entry from [`.mcp.json`](.mcp.json) into your MCP client config:
 
 ```json
 {
@@ -45,278 +39,258 @@ URL — no Docker socket, no `docker exec`, no per-server registration.
 }
 ```
 
-Claude Code users: the project's `.mcp.json` auto-configures this. Other clients:
+Claude Code users: the project `.mcp.json` auto-configures this. Other clients:
 
-| MCP client | File |
+| Client | Config file |
 |---|---|
-| Claude Code | `.claude/mcp.json` (project) or `~/.claude/mcp.json` (global) |
-| Claude Desktop | `claude_desktop_config.json` ([docs](https://docs.anthropic.com/en/docs/claude-desktop)) |
+| Claude Desktop | `claude_desktop_config.json` |
 | Cline (VS Code) | `cline_mcp_settings.json` |
 | Continue | `~/.continue/config.json` |
-| Zed | `settings.json` → `{"context_servers": {...}}` |
+| Zed | `settings.json` → `context_servers` |
 
-Restart the client after editing. The gateway runs as a background service inside
-the container — always up, no cold start.
+Restart the client after editing.
 
 ### Architecture
 
 ```
-MCP client (Claude Code, Desktop, etc.)
-  │  HTTP POST /mcp (StreamableHTTP)
+MCP client
+  │  HTTP POST /mcp
   ▼
-localhost:3100  ───────────────────────────────────────┐
-  │                                                     │
-  │  docker compose port mapping                        │
-  ▼                                                     │
-┌───────────────────────────────────────────────────┐   │
-│ container: toolbox                                │   │
-│                                                   │   │
-│  gateway.py --transport http :3100                │   │
-│    ├─ r2pm -r r2mcp               → r2__*         │   │
-│    ├─ bridge_mcp_ghidra.py :8089   → ghidra__*    │   │
-│    ├─ shell-mcp.py                 → shell__*     │   │
-│    └─ python3 -m angr.mcp          → angr__*      │   │
-└───────────────────────────────────────────────────┘   │
+localhost:3100
+  │
+  ▼
+┌─────────────────────────────────────────┐
+│ toolbox container                       │
+│                                         │
+│  gateway.py --transport http :3100      │
+│    ├─ r2pm -r r2mcp          → r2__*    │
+│    ├─ bridge_mcp_ghidra.py   → ghidra__*│
+│    ├─ shell-mcp.py            → shell__*│
+│    └─ python3 -m angr.mcp     → angr__* │
+└─────────────────────────────────────────┘
 ```
 
-Gateway starts all child MCP servers at boot. Tools are **namespaced**
-(`r2__*`, `ghidra__*`, `shell__*`, `angr__*`) — never collide. Failed children
-are logged but don't block the gateway; it degrades with whatever connected.
+Gateway auto-starts all child servers at boot. Tools are namespaced so they never collide. 
+Failed children don't block the gateway; it degrades with whatever connected.
 
 ### Server catalog
 
-| Namespace | Server | What it exposes |
+| Namespace | Server | Tools |
 |---|---|---|
-| `r2__*` | r2mcp via `r2pm` | Disassembly, decompilation (r2ghidra), hexdump, xrefs, symbols, search, emulation |
-| `ghidra__*` | bridge_mcp_ghidra.py → Ghidra headless :8089 | Project mgmt, import, auto-analysis, 200+ tools: decompilation, patching, struct/types, debugger, Bindiff |
-| `shell__*` | shell-mcp.py | Arbitrary shell commands — angr, AFL++, honggfuzz, apktool, jadx, gdb, gcc, python3, etc. |
-| `angr__*` | angr.mcp (built-in) | Binary analysis — project loading, CFG, symbolic execution, data dependency, VFG |
+| `r2__*` | r2mcp | Disassembly, decompilation (r2ghidra), hexdump, xrefs, symbols, search |
+| `ghidra__*` | Ghidra headless MCP | Import, auto-analysis, 200+ tools: decompile, patch, types, debugger, Bindiff |
+| `shell__*` | shell-mcp.py | Arbitrary shell commands — angr, AFL++, gdb, apktool, jadx, python3, etc. |
+| `angr__*` | angr.mcp | Project loading, CFG, symbolic execution, data dependency, VFG |
 
 ### Ghidra tool availability
 
-Ghidra tools come in two categories:
+Ghidra tools are dynamic — instance-scoped tools appear after loading a program:
+
+```
+import_file → auto-connect → schema fetch → all 200+ tools available
+```
 
 | Category | When available | Examples |
 |---|---|---|
-| **Static** | Always — no instance needed | `import_file`, `list_instances`, `connect_instance`, `list_tool_groups`, `load_tool_group` |
-| **Instance-scoped** | After connecting to a loaded program | `decompile_function`, `list_functions`, `rename_function`, `xrefs_to`, `disassemble_function`, all debugger tools |
+| Static | Always | `import_file`, `list_instances`, `connect_instance` |
+| Instance-scoped | After connecting to loaded program | `decompile_function`, `list_functions`, `xrefs_to`, `disassemble_function`, debugger tools |
 
-Lifecycle:
-
-```
-import_file ──→ auto-connect ──→ schema fetch ──→ all 200+ tools available
-     │
-     └── or: connect_instance ──→ schema fetch ──→ all tools available
-```
-
-Use `check_tools` to see what's callable right now:
-
-```
-ghidra__check_tools: "decompile_function,list_functions,import_file,bindiff"
-→ import_file=callable, decompile_function=not_found (no instance yet)
-→ import_file completes → all four = callable
-```
-
-Static tools are built into the bridge. Instance-scoped tools are fetched
-dynamically from the headless server's `/mcp/schema` after connect. If a tool
-shows `not_loaded` (exists but its group isn't loaded), call `load_tool_group`
-with the category name. Use `list_tool_groups` to see all categories and their
-loaded status.
+Use `check_tools` to see what's callable right now. 
+Use `list_tool_groups` to see all categories and their load state.
 
 ### Ghidra GUI (optional)
 
-Run Ghidra GUI on your host with the GhidraMCP plugin on port 8080. Set
-`GHIDRA_MCP_URL` in `docker-compose.yml` to point the bridge at your host:
+Run Ghidra GUI on your host with the GhidraMCP plugin on port 8080:
 
 ```yaml
 environment:
   - GHIDRA_MCP_URL=http://host.docker.internal:8080
 ```
 
-Rebuild and the gateway's ghidra bridge will route to your GUI instance instead
-of the headless server.
+The gateway's Ghidra bridge routes to your GUI instead of headless.
 
 ## Agents
 
-`.claude/agents/` ships with specialized RE agents. Anyone cloning the repo gets
-them automatically — Claude Code loads agents from the project's `.claude/`
-directory.
+`.claude/agents/` ships with specialized RE agents — loaded automatically by
+Claude Code:
 
 | Agent | Model | What it does |
 |---|---|---|
-| `binary-triage` | haiku | Fast radare2 + shell first-look at unknown binary |
-| `ghidra-importer` | sonnet | Import binary into Ghidra headless, run auto-analysis |
+| `binary-triage` | haiku | Fast radare2 first-look at unknown binary |
+| `ghidra-importer` | sonnet | Import binary into Ghidra, run auto-analysis |
 | `ghidra-analyst` | sonnet | Static RE — decompile, xrefs, rename, annotate |
-| `ghidra-debugger` | sonnet | Dynamic analysis — attach, breakpoints, trace, memory watch |
+| `ghidra-debugger` | sonnet | Dynamic analysis — attach, breakpoints, trace |
 | `re-orchestrator` | opus | Full pipeline: triage → import → static → dynamic → report |
 
-### Usage examples
+See [CLAUDE.md](CLAUDE.md) for usage examples and how to add your own agents.
 
+## Tools inside the container
+
+All pre-installed and on PATH:
+
+| Category | Tools |
+|---|---|
+| Disassembly | radare2 (with r2ghidra), Ghidra headless, BinDiff |
+| Debugging | gdb, gdb-multiarch, lldb, strace, ltrace |
+| Binary analysis | angr, pwntools, ropper, ROPgadget, capstone, unicorn, keystone, LIEF |
+| Fuzzing | AFL++, honggfuzz |
+| Android | apktool, jadx, adb, frida, objection |
+| Build | gcc, g++, clang, nasm, make, cmake |
+| Utilities | python3, strings, objdump, patchelf, elfutils, vim, tmux |
+
+Shell in with `docker exec -it toolbox bash`.
+
+### Key scripts
+
+```bash
+/opt/tools/scripts/load-ghidra.sh /workspace/my-binary          # import + analyze
+/opt/tools/scripts/load-ghidra.sh /workspace/my-binary myproj   # named project
 ```
-triage this binary: /workspace/suspicious.elf
-import /workspace/challenge.exe into Ghidra
-decompile the function at 0x401000 and trace its xrefs
-find all strings containing "http" in this binary
-trace every call to D2Common.ordinal:10624 with arguments
-full reverse engineering analysis on /workspace/malware.bin
+
+## Troubleshooting
+
+### MCP client not connecting
+
+**Symptom:** "failed to connect" or "connection refused."
+
+```bash
+curl http://localhost:3100/mcp          # gateway responding?
+docker ps --filter name=toolbox          # container running?
+docker compose up -d                     # start if down
+docker compose logs toolbox | tail -20   # check startup
 ```
 
-### Adding your own agents
+If the container is running but the port is unreachable:
 
-Add `.md` files to `.claude/agents/`. Frontmatter:
+- **Wrong URL.** The endpoint is `/mcp`, not `/`. Client config: `http://localhost:3100/mcp`.
+- **Docker Desktop (Windows/macOS).** Docker sometimes binds to the internal VM IP. Try `host.docker.internal:3100`.
+- **Firewall / VPN.** Some VPN clients block `localhost`. Try `127.0.0.1`.
+- **Client not restarted.** Most clients need a restart after config changes.
+- **Port mapping.** `docker-compose.yml` must have `ports: ["3100:3100"]`.
+
+### Ghidra headless server won't start
+
+**Symptom:** `ghidra__*` tools missing, or gateway log shows "ghidra MCP: connection timed out."
+
+```bash
+docker exec toolbox cat /tmp/ghidra-mcp.log
+```
+
+| Error | Cause | Fix |
+|---|---|---|
+| `GhidraMCPHeadless.jar not found` | Build stage failed | `docker compose build --no-cache` |
+| `java.lang.OutOfMemoryError` | 4GB heap too small | Edit `entrypoint.sh`: raise `-Xmx4g` to `-Xmx8g` |
+| `Address already in use` | Stale container holding port 8089 | `docker compose down -v && docker compose up -d` |
+| `Could not find or load main class` | Corrupted JAR or classpath | `docker compose build --no-cache` |
+| Gateway "timed out" (>20s) | Slow first boot with large projects | `docker compose restart toolbox` |
+
+Health check Ghidra directly:
+
+```bash
+curl -H "Authorization: Bearer re-toolbox-dev-secret" http://localhost:8089/health
+```
+
+If that passes but `ghidra__*` tools are still missing, the bridge process
+(`bridge_mcp_ghidra.py`) crashed. Restart the container.
+
+### SYS_PTRACE and seccomp:unconfined
+
+**Symptom:** gdb, strace, or AFL++ return "Operation not permitted."
+
+These tools need capabilities in `docker-compose.yml`:
 
 ```yaml
----
-name: my-agent
-description: What it does
-model: haiku | sonnet | opus
-tools: [Read, Bash, mcp__toolbox__ghidra__*, mcp__toolbox__r2__*, mcp__toolbox__shell__exec]
----
+cap_add:
+  - SYS_PTRACE
+security_opt:
+  - seccomp:unconfined
 ```
 
-`tools` is optional — omit to inherit all tools from the parent session. MCP
-tools use namespaced names: `mcp__toolbox__<server>__<tool_name>`.
+Additional causes:
 
-## CLI tools
+- **AppArmor (Ubuntu/Debian host).** Some profiles deny ptrace even with `SYS_PTRACE`. Temporary fix: `sudo aa-teardown` (dev only). Permanent: `--security-opt apparmor:unconfined`.
+- **Docker rootless.** Limited ptrace support. Use root Docker daemon for full RE tooling.
+- **Custom daemon seccomp profile.** Check `/etc/docker/daemon.json` for a global `seccomp-profile` that overrides per-container settings.
 
-All tools available inside the container. Shell in with:
+### Build failures
 
 ```bash
-docker exec -it toolbox bash
+DOCKER_BUILDKIT=1 docker compose build        # force BuildKit
+docker compose build --no-cache               # bust stale cache
 ```
 
-### radare2
+| Error | Cause | Fix |
+|---|---|---|
+| `failed to fetch ...` / 404 | Upstream URL changed (Ghidra, BinDiff) | Update version ARG + URL in `docker/Dockerfile` |
+| `gcc: fatal error` / `mvn: not found` | Missing build dep or wrong stage | `docker compose build --no-cache` |
+| Out of disk | Build cache bloat | `docker builder prune --all --force` |
+
+### Gateway degraded — tools missing
+
+**Symptom:** some namespaces don't appear in your client's tool list.
+
+The gateway degrades gracefully — failed children don't block healthy ones.
+Check the log:
 
 ```bash
-r2 -A /workspace/chall              # open + analyze
-r2 -c "pdg @ main" /workspace/chall # decompile main via r2ghidra
-r2pm -r r2mcp -t                    # list MCP tools exposed by r2mcp
+docker exec toolbox cat /tmp/gateway-http.log
 ```
 
-### Ghidra headless
+Lines like `r2 MCP: connection timed out — skipped` tell you which child failed.
+`docker compose restart toolbox` retries all connections.
 
-**Quick import** via the bundled script:
+Per-child causes:
+
+- **`r2__*` missing.** r2pm database stale or r2mcp patch didn't apply. Rebuild.
+- **`ghidra__*` missing.** See Ghidra section above.
+- **`shell__*` missing.** Rare — check gateway log for a Python traceback.
+- **`angr__*` missing.** angr import slow on first launch. Gateway gives it 15s. If it times out regularly, raise `timeout_connect` in `gateway.py` line 94.
+
+### General diagnostics
 
 ```bash
-/opt/tools/scripts/load-ghidra.sh /workspace/my-binary          # auto-analyze
-/opt/tools/scripts/load-ghidra.sh /workspace/my-binary myproj   # named project
-/opt/tools/scripts/load-ghidra.sh /workspace/my-binary --no-analyze
+docker compose ps
+docker compose logs toolbox --tail 50
+curl -s http://localhost:3100/mcp
+curl -s -H "Authorization: Bearer re-toolbox-dev-secret" http://localhost:8089/health
+docker exec toolbox cat /tmp/gateway-http.log
+docker exec toolbox cat /tmp/ghidra-mcp.log
+docker exec toolbox ps aux | grep -E "gateway|ghidra|r2mcp|shell-mcp|angr"
 ```
 
-Checks MCP server health, imports via `analyzeHeadless`, calls `/load_program`
-so the bridge sees the binary. Projects land in
-`/home/ctf/.config/ghidra` (persisted via Docker volume `ghidra-projects`).
-
-**Manual import** with analyzeHeadless:
-
-```bash
-/opt/tools/ghidra/support/analyzeHeadless /home/ctf/.config/ghidra myproj \
-  -import /workspace/chall -overwrite
-```
-
-### HTTP API (Ghidra headless)
-
-```bash
-curl http://localhost:8089/check_connection
-curl -X POST "http://localhost:8089/load_program" -d "file=/workspace/mybin"
-curl "http://localhost:8089/decompile_function?program=mybin&name=main"
-```
-
-### BinDiff
-
-CLI and MCP. Export `.BinExport` from Ghidra or IDA, then diff:
-
-```bash
-bindiff old.BinExport new.BinExport
-```
-
-The ghidra-headless MCP exposes `bindiff` and `bindiff_export_from_ghidra` tools
-for diffing directly from Ghidra projects.
-
-### angr + Python RE stack
-
-Pre-installed: angr, pwntools, ropper, ropgadget, capstone, unicorn, keystone,
-z3, lief, r2pipe, frida-tools, objection.
-
-```bash
-python3 -c "
-import angr
-p = angr.Project('/workspace/chall', auto_load_libs=False)
-cfg = p.analyses.CFGFast()
-print(f'{len(cfg.kb.functions)} functions, entry at {hex(p.entry)}')
-"
-```
-
-### Fuzzing
-
-AFL++ and honggfuzz installed under `/opt/tools/fuzzing/bin` (on PATH).
-
-```bash
-# AFL++
-mkdir -p fuzz-in && echo AAAA > fuzz-in/seed
-afl-fuzz -i fuzz-in -o fuzz-out -- /workspace/chall @@
-# black-box / no source: add -Q (QEMU mode)
-
-# honggfuzz
-mkdir -p hf-in && echo AAAA > hf-in/seed
-honggfuzz -i hf-in -o hf-out -- /workspace/chall ___FILE___
-```
-
-### Android RE
-
-```bash
-apktool d app.apk -o app_decoded
-jadx app.apk -d app_jadx_out
-adb devices
-frida -U -f com.example.app -l hook.js --no-pause
-objection -g com.example.app explore
-```
-
-### Other tools
-
-`gdb`, `lldb`, `strace`, `ltrace`, `nasm`, `objdump`, `strings`, `patchelf`,
-`gcc`, `clang`, and `python3` are all on PATH.
+`docker compose down -v` wipes the Ghidra project volume for a clean state.
 
 ## Project structure
 
 ```
 .
-├── .mcp.json                    MCP config — paste into your client (single HTTP entry)
-├── CLAUDE.md                    Agent reference + quickstart for Claude Code
-├── docker-compose.yml           One-command start
+├── .mcp.json                    MCP config — single HTTP entry
+├── CLAUDE.md                    Agent reference + quickstart
+├── docker-compose.yml
 ├── docker/
 │   └── Dockerfile               Multi-stage build, pinned versions
 ├── scripts/
-│   ├── entrypoint.sh            Container entrypoint (starts Ghidra MCP + gateway HTTP)
-│   ├── load-ghidra.sh           Import + load binary into Ghidra MCP from CLI
+│   ├── entrypoint.sh            Starts Ghidra MCP + gateway
+│   ├── load-ghidra.sh           CLI binary import into Ghidra
 │   └── mcp/
-│       ├── gateway.py           MCP gateway — composes all servers behind one HTTP endpoint
+│       ├── gateway.py           Composes all MCP servers behind one endpoint
 │       └── shell-mcp.py         Shell command MCP server
 ├── .claude/
-│   ├── settings.json            Auto-enables project MCP servers
-│   ├── settings.local.json      Local overrides (git-ignored)
-│   └── agents/                  Specialized RE agents (auto-loaded by Claude Code)
-│       ├── binary-triage.md     Fast radare2 first-look
-│       ├── ghidra-importer.md   Binary import + auto-analysis
-│       ├── ghidra-analyst.md    Static RE deep-dive
-│       ├── ghidra-debugger.md   Dynamic analysis / debugger
-│       └── re-orchestrator.md   Full pipeline coordinator
+│   ├── agents/                  RE agents (auto-loaded by Claude Code)
+│   └── settings.json            Project MCP config
 └── workspace/                   Mounted at /workspace — put binaries here
 ```
 
 ## Security
 
-Compose adds `SYS_PTRACE` and disables seccomp (`unconfined`) — required by
-gdb, strace, and AFL. Run this container in an isolated VM when analyzing
-untrusted binaries.
+Compose adds `SYS_PTRACE` and disables seccomp — required by debuggers and fuzzers. 
+Run in an isolated VM when analyzing untrusted binaries.
 
-The MCP gateway listens on `0.0.0.0:3100` inside the container. Only the port
-you choose to expose in `docker-compose.yml` reaches your host. No
-authentication on the gateway itself — treat it as a local development tool,
-not an internet-facing service.
+The gateway has no authentication. Don't expose port 3100 to a public network interface. 
+Default compose mapping (`127.0.0.1:3100:3100`) is safe.
 
-## Build & release
+See [SECURITY.md](SECURITY.md) for vulnerability reporting and full security posture.
 
-Builds validated on every push and PR via GitHub Actions
-(`.github/workflows/build.yml`). Push a version tag (`v1.0.0`, `v1.0`) to
-publish the image to GHCR (`ghcr.io/<user>/re-toolbox`).
+## License
+
+MIT for project code. Bundled tools have their own licenses — see [NOTICE.md](NOTICE.md).
