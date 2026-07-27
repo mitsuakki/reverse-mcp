@@ -19,3 +19,9 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+---
+
+This license applies to re-toolbox project code: the MCP gateway, shell server,
+Ghidra bridge, agent definitions, Dockerfile, and scripts. Third-party tools
+bundled in the container image have their own licenses — see NOTICE.md.
