@@ -5,7 +5,7 @@ Thanks for wanting to contribute. This is a short guide.
 ## Setup
 
 ```bash
-git clone git@github:mitsuakki/reverse-mcp
+git clone https://github.com/mitsuakki/reverse-mcp.git
 cd reverse-mcp
 docker compose build
 docker compose up -d
@@ -28,7 +28,7 @@ Gateway listens on `localhost:3100`. Drop test binaries in `./workspace`.
 ```bash
 docker compose build      # must succeed
 docker compose up -d      # must start without errors
-curl http://localhost:3100/check_connection  # gateway health check
+curl http://localhost:3100/mcp  # gateway responding?
 ```
 
 If you change the Dockerfile, also verify:
@@ -66,11 +66,36 @@ single-purpose — one agent per `.md`.
 
 ## Adding a new MCP server
 
-1. Write the server (Python script that speaks MCP stdio or HTTP).
-2. Wire it in `gateway.py` — add a `ServerProcess` entry.
-3. Pick a namespace prefix that won't collide with existing ones.
-4. Update the architecture diagram in `README.md` and the server catalog
-   table plus CLAUDE.md.
+1. Write the server (Python script that speaks MCP over stdio). Use
+   `scripts/mcp/shell-mcp.py` as a minimal reference — `Server` + `list_tools` +
+   `call_tool` + `stdio_server`. For HTTP servers, the gateway only speaks stdio
+   to children; run your server's HTTP transport separately if needed.
+
+2. Wire it in `gateway.py` — add a `ChildDef` entry at line ~90:
+
+   ```python
+   ChildDef(
+       namespace="mytool",
+       command="python3",
+       args=["/opt/tools/scripts/mcp/my-tool.py"],
+       timeout_connect=10.0,
+   ),
+   ```
+
+3. Install any dependencies in the Dockerfile. Add a `RUN pip3 install` line in
+   the `python` stage, or `apt-get install` in `base`. If your tool needs a build
+   step, add a new stage (see `r2-ghidra` or `fuzzing` for patterns) and
+   `COPY --from` in the `final` stage.
+
+4. Pick a namespace prefix that won't collide (`r2`, `ghidra`, `shell`, `angr` are
+   taken).
+
+5. Update the server catalog in `README.md` and the architecture diagram in both
+   `README.md` and `CLAUDE.md`.
+
+6. If your tools change at runtime (appear/disappear after a state change), set
+   `dynamic=True` on the `ChildDef` and add trigger tool names to
+   `_REFRESH_TRIGGERS` in `gateway.py`.
 
 ## Code style
 
