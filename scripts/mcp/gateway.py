@@ -66,6 +66,10 @@ class ChildDef:
     env: dict[str, str] = field(default_factory=dict)
     timeout_connect: float = 15.0  # generous — ghidra bridge can be slow
     dynamic: bool = False  # True = tools change at runtime (e.g. after import_file)
+    lazy: bool = False  # True = defer connection until first tool call
+    # For lazy children: tool names that are always available (registered as
+    # placeholders so the MCP client can discover them before connection).
+    static_tools: list[str] = field(default_factory=list)
 
 
 CHILDREN: list[ChildDef] = [
@@ -76,11 +80,21 @@ CHILDREN: list[ChildDef] = [
     ),
     ChildDef(
         namespace="ghidra",
-        command="python3",
-        args=["/opt/tools/ghidra-mcp/bridge_mcp_ghidra.py"],
+        command="/opt/tools/scripts/ghidra-lazy.sh",
+        args=[],
         env={"GHIDRA_MCP_URL": os.environ.get("GHIDRA_MCP_URL", "http://127.0.0.1:8089")},
-        timeout_connect=20.0,
-        dynamic=True,  # tools appear/disappear after import_file / connect_instance
+        timeout_connect=45.0,  # headless cold-start is slow
+        dynamic=True,
+        lazy=True,  # only start Ghidra on first ghidra__* tool call
+        static_tools=[  # always-available tools — registered as placeholders
+            "import_file",
+            "list_instances",
+            "connect_instance",
+            "disconnect_instance",
+            "list_tool_groups",
+            "load_tool_group",
+            "check_tools",
+        ],
     ),
     ChildDef(
         namespace="shell",
@@ -139,35 +153,56 @@ class Gateway:
         await session.initialize()
         return session
 
+    async def _connect_and_register(self, child_def: ChildDef) -> None:
+        """Connect one child and register its tools. Shared by start() and lazy connect."""
+        ns = child_def.namespace
+        log.info("connecting %s MCP (%s %s)…", ns, child_def.command, " ".join(child_def.args))
+        session = await asyncio.wait_for(
+            self._connect_child(child_def),
+            timeout=child_def.timeout_connect,
+        )
+        self._children[ns] = session
+        self._child_defs[ns] = child_def
+
+        tools_result = await session.list_tools()
+        async with self._tools_lock:
+            for tool in tools_result.tools:
+                ns_name = self._ns_name(ns, tool.name)
+                self._tools[ns_name] = (ns, tool.name, tool)
+                log.info("  tool: %s", ns_name)
+
+        if not tools_result.tools:
+            log.warning("  %s MCP: no tools exposed (may be dynamic)", ns)
+
+        log.info("%s MCP connected (%d tools)", ns, len(tools_result.tools))
+
     async def start(self) -> None:
-        """Connect all children and register their tools."""
+        """Connect eager children and register their tools. Lazy children wait."""
 
         for child_def in CHILDREN:
-            ns = child_def.namespace
-            try:
-                log.info("connecting %s MCP (%s %s)…", ns, child_def.command, " ".join(child_def.args))
-                session = await asyncio.wait_for(
-                    self._connect_child(child_def),
-                    timeout=child_def.timeout_connect,
-                )
-                self._children[ns] = session
-                self._child_defs[ns] = child_def
-
-                # Enumerate tools
-                tools_result = await session.list_tools()
+            if child_def.lazy:
+                self._child_defs[child_def.namespace] = child_def
+                # Register placeholder tools so MCP client can discover the
+                # namespace before connection. Real tools replace these on
+                # first call (via _connect_and_register).
                 async with self._tools_lock:
-                    for tool in tools_result.tools:
-                        ns_name = self._ns_name(ns, tool.name)
-                        self._tools[ns_name] = (ns, tool.name, tool)
-                        log.info("  tool: %s", ns_name)
-
-                if not tools_result.tools:
-                    log.warning("  %s MCP: no tools exposed (may be dynamic)", ns)
-
+                    for tool_name in child_def.static_tools:
+                        ns_name = self._ns_name(child_def.namespace, tool_name)
+                        self._tools[ns_name] = (
+                            child_def.namespace,
+                            tool_name,
+                            Tool(name=tool_name, description="", inputSchema={"type": "object", "properties": {}}),
+                        )
+                log.info("%s MCP: deferred (lazy, %d placeholder tools)",
+                         child_def.namespace, len(child_def.static_tools))
+                continue
+            try:
+                await self._connect_and_register(child_def)
             except asyncio.TimeoutError:
-                log.error("%s MCP: connection timed out after %ss — skipped", ns, child_def.timeout_connect)
+                log.error("%s MCP: connection timed out after %ss — skipped",
+                          child_def.namespace, child_def.timeout_connect)
             except Exception:
-                log.exception("%s MCP: failed to start — skipped", ns)
+                log.exception("%s MCP: failed to start — skipped", child_def.namespace)
 
         if not self._children:
             log.error("No child MCPs connected — gateway is empty")
@@ -225,6 +260,19 @@ class Gateway:
                 if name not in self._tools:
                     raise ValueError(f"Unknown tool: {name}")
                 ns, orig_name, _tool = self._tools[name]
+
+            # Lazy connect: child not started yet — start it now.
+            # Only possible for static tools registered via child_def placeholder.
+            if ns not in self._children:
+                child_def = self._child_defs.get(ns)
+                if child_def and child_def.lazy:
+                    try:
+                        await self._connect_and_register(child_def)
+                    except Exception:
+                        log.exception("lazy connect failed for %s", ns)
+                        raise ValueError(f"Failed to start {ns} MCP server")
+                else:
+                    raise ValueError(f"MCP server not connected: {ns}")
 
             session = self._children[ns]
             result: CallToolResult = await session.call_tool(orig_name, arguments)
