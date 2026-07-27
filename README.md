@@ -24,6 +24,30 @@ Gateway listens on `localhost:3100`. Drop binaries in `./workspace` — mounted 
 docker exec -it toolbox bash   # optional shell access
 ```
 
+### Resource requirements
+
+| Resource | Minimum | Recommended | Notes |
+|---|---|---|---|
+| RAM | 8 GB | 16 GB | Ghidra alone uses 4 GB heap by default (`-Xmx4g`). Large binaries push it higher. angr symbolic execution can spike memory unpredictably. Running Ghidra + angr + fuzzing simultaneously: 16 GB minimum. |
+| CPU | 4 cores | 8+ cores | Ghidra auto-analysis is multi-threaded and CPU-heavy. AFL++ and angr use all cores they can get. |
+| Disk (image) | 10 GB | 20 GB | Image is ~4 GB. Build cache and intermediate layers eat another 6–10 GB during `docker compose build`. |
+| Disk (workspace) | 5 GB | 50 GB | Depends on your binaries. Ghidra projects (in `ghidra-projects` volume) grow with analysis — a large binary can produce 500 MB+ of derived data. AFL++ corpora also grow fast. |
+
+**With 8 GB RAM:** fine for one tool at a time — radare2, shell tools, or a small Ghidra session. Don't fuzz and decompile simultaneously.
+
+**With 16 GB RAM:** Ghidra + angr + light fuzzing all at once. This is the sweet spot.
+
+**With 32 GB RAM:** everything simultaneously. Run Ghidra auto-analysis, angr symbolic execution, AFL++, and have CPU left for the MCP gateway. No swapping.
+
+If Docker on macOS/Windows is limited to 8 GB (Docker Desktop default):
+raise it to 12+ GB in Docker Desktop → Settings → Resources → Memory.
+
+### Image size
+
+Final image: ~3.5–4 GB. The multi-stage build keeps it lean — build toolchains
+(gcc, cmake, maven, rust) are discarded. What ships: Ubuntu 24.04 base + RE
+tools + Ghidra + radare2 + Python stack. Ghidra alone is ~1.2 GB.
+
 ## ⚠️ Security warning
 
 This container runs with **`SYS_PTRACE`** and **`seccomp:unconfined`** — required
