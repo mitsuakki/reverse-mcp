@@ -34,9 +34,11 @@ RUN useradd -m -s /bin/bash -G sudo ctf \
     && mkdir -p /workspace /opt/tools \
     && chown -R ctf:ctf /workspace /opt/tools
 
-# BinDiff — small .deb, rarely changes, runtime-only (no build deps needed)
+# BinDiff — small .deb, rarely changes. Separate layer so apt packages above
+# cache independently; bumping BINDIFF_DEB_URL doesn't re-fetch system deps.
 ARG BINDIFF_DEB_URL=https://github.com/google/bindiff/releases/download/v8/bindiff_8_amd64.deb
-RUN wget -q -O /tmp/bindiff.deb "${BINDIFF_DEB_URL}" \
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    wget -q -O /tmp/bindiff.deb "${BINDIFF_DEB_URL}" \
     && apt-get update && apt-get install -y --no-install-recommends /tmp/bindiff.deb \
     && rm -f /tmp/bindiff.deb \
     && rm -rf /var/lib/apt/lists/*
@@ -75,18 +77,25 @@ ARG ROPPER_VERSION=1.13.10
 ARG ROPGADGET_VERSION=7.6
 ARG MCP_VERSION=1.13.0
 
+# Layer 1: angr + transitive heavy deps (slow build, rarely bumped).
+# These are pinned by angr itself — let pip resolve exact versions.
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip3 install --break-system-packages \
         angr==${ANGR_VERSION} \
         claripy \
+        capstone \
+        unicorn \
+        pyelftools \
+        z3-solver
+
+# Layer 2: standalone tools (lighter, bumped more often).
+# Bumping PWNTOOLS_VERSION or FRIDA_VERSION only invalidates this layer.
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip3 install --break-system-packages \
         pwntools==${PWNTOOLS_VERSION} \
         ropper==${ROPPER_VERSION} \
         ropgadget==${ROPGADGET_VERSION} \
-        capstone \
-        unicorn \
         keystone-engine==${KEYSTONE_VERSION} \
-        pyelftools \
-        z3-solver \
         r2pipe==${R2PIPE_VERSION} \
         lief==${LIEF_VERSION} \
         frida-tools==${FRIDA_VERSION} \
@@ -118,10 +127,13 @@ ENV PATH="/opt/tools/radare2/bin:${PATH}" \
 RUN pip3 install --break-system-packages mcp==${MCP_VERSION} \
     && chown -R ctf:ctf /opt/tools/radare2
 USER ctf
-# r2mcp needs a source patch for radare2 >=6.0 (r_core_call_str_at -> r_core_cmd_str_at).
-# r2pm's own make will fail on the ld error; we ignore that, patch, rebuild manually.
-RUN r2pm -U \
-    && r2pm -ci r2mcp r2ghidra r2ghidra-sleigh || true \
+# Layer 1: r2pm database update (network-bound, rarely invalidates).
+RUN r2pm -U
+# Layer 2: install plugins + patch r2mcp for radare2 >=6.0.
+# r2pm's own make fails on the ld error; we ignore, patch, rebuild manually.
+# Separate layer: if the r2mcp patch breaks on a new r2 version, only this
+# RUN re-executes — r2pm -U stays cached.
+RUN r2pm -ci r2mcp r2ghidra r2ghidra-sleigh || true \
     && cd /home/ctf/.local/share/radare2/r2pm/git/r2mcp/src \
     && sed -i 's/r_core_call_str_at/r_core_cmd_str_at/g' tools.c \
     && make clean && make && make user-install
