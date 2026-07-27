@@ -1,7 +1,7 @@
 # Third-party notices
 
-re-toolbox is MIT-licensed. The container image includes third-party tools with
-their own licenses. None of these are linked into re-toolbox code — they run as
+reverse-mcp is MIT-licensed. The container image includes third-party tools with
+their own licenses. None of these are linked into reverse-mcp code — they run as
 separate processes inside the container.
 
 ## Bundled tools
@@ -57,6 +57,6 @@ complying with Google's terms for BinDiff.
 ## No linkage
 
 All third-party tools run as independent processes — no GPL or LGPL code is
-linked into re-toolbox's Python MCP servers. The container orchestrator
+linked into reverse-mcp's Python MCP servers. The container orchestrator
 (`gateway.py`, `shell-mcp.py`, `bridge_mcp_ghidra.py`) communicates with tools
 via stdio or HTTP.

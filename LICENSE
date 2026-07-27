@@ -22,6 +22,6 @@ SOFTWARE.
 
 ---
 
-This license applies to re-toolbox project code: the MCP gateway, shell server,
+This license applies to reverse-mcp project code: the MCP gateway, shell server,
 Ghidra bridge, agent definitions, Dockerfile, and scripts. Third-party tools
 bundled in the container image have their own licenses — see NOTICE.md.
