@@ -1,4 +1,4 @@
-# re-toolbox
+# reverse-mcp
 
 All-in-one Docker container for reverse engineering — radare2 + Ghidra headless
 wired as MCP servers, plus BinDiff, angr, AFL++, honggfuzz, and Android tools

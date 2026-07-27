@@ -1,0 +1,20 @@
+# Dependabot version updates
+# https://docs.github.com/code-security/dependabot/dependabot-version-updates
+
+version: 2
+updates:
+  - package-ecosystem: "docker"
+    directory: "/docker"
+    schedule:
+      interval: "monthly"
+    labels:
+      - "docker"
+      - "dependencies"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    labels:
+      - "ci"
+      - "dependencies"

@@ -1,0 +1,70 @@
+# Auto-label PRs by changed path. Use with actions/labeler.
+# https://github.com/actions/labeler
+
+docker:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "docker/**"
+          - "docker-compose.yml"
+          - ".dockerignore"
+
+gateway:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "scripts/mcp/gateway.py"
+
+ghidra:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "scripts/mcp/bridge_mcp_ghidra.py"
+          - "scripts/load-ghidra.sh"
+
+shell-mcp:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "scripts/mcp/shell-mcp.py"
+
+r2mcp:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "**/r2mcp/**"
+
+angr:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "**/angr/**"
+
+agents:
+  - changed-files:
+      - any-glob-to-any-file:
+          - ".claude/agents/**"
+          - "CLAUDE.md"
+
+docs:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "README.md"
+          - "CONTRIBUTING.md"
+          - "SECURITY.md"
+          - "docs/**"
+          - "*.md"
+
+ci:
+  - changed-files:
+      - any-glob-to-any-file:
+          - ".github/workflows/**"
+          - ".github/labeler.yml"
+
+mcp-config:
+  - changed-files:
+      - any-glob-to-any-file:
+          - ".mcp.json"
+          - ".claude/mcp.json"
+          - ".claude/settings.json"
+
+breaking-change:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "scripts/mcp/gateway.py"
+          - ".mcp.json"
+          - "docker-compose.yml"
