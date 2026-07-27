@@ -106,12 +106,58 @@ Copy the `toolbox` entry from [`.mcp.json`](.mcp.json) into your MCP client conf
 
 Claude Code users: the project `.mcp.json` auto-configures this. Other clients:
 
-| Client | Config file |
-|---|---|
-| Claude Desktop | `claude_desktop_config.json` |
-| Cline (VS Code) | `cline_mcp_settings.json` |
-| Continue | `~/.continue/config.json` |
-| Zed | `settings.json` → `context_servers` |
+**Claude Desktop** — `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "toolbox": {
+      "type": "http",
+      "url": "http://localhost:3100/mcp"
+    }
+  }
+}
+```
+
+**Cline (VS Code)** — `cline_mcp_settings.json` (workspace or user settings):
+
+```json
+{
+  "mcpServers": {
+    "toolbox": {
+      "type": "http",
+      "url": "http://localhost:3100/mcp"
+    }
+  }
+}
+```
+
+**Continue** — `~/.continue/config.json`:
+
+```json
+{
+  "experimental": {
+    "mcpServers": {
+      "toolbox": {
+        "type": "http",
+        "url": "http://localhost:3100/mcp"
+      }
+    }
+  }
+}
+```
+
+**Zed** — `settings.json` → `context_servers`:
+
+```json
+{
+  "context_servers": {
+    "reverse-mcp": {
+      "url": "http://localhost:3100/mcp"
+    }
+  }
+}
+```
 
 Restart the client after editing.
 
