@@ -24,6 +24,47 @@ Gateway listens on `localhost:3100`. Drop binaries in `./workspace` — mounted 
 docker exec -it toolbox bash   # optional shell access
 ```
 
+## ⚠️ Security warning
+
+This container runs with **`SYS_PTRACE`** and **`seccomp:unconfined`** — required
+by debuggers and fuzzers, but they strip away two key Docker security boundaries:
+
+| What you lose | Why it matters |
+|---|---|
+| `seccomp:unconfined` | Docker's default seccomp profile blocks ~44 of 300+ syscalls. Disabling it lets any process in the container call any syscall — including `ptrace`, `process_vm_readv`, `process_vm_writev`, and `kexec`. A compromised or malicious binary can use syscalls that a default Docker container can't. |
+| `SYS_PTRACE` | Lets processes read/write other processes' memory, registers, and syscall state. A debugger needs this. So does a rootkit. |
+| `--privileged` (not used) | We don't go this far — no host device access, no cgroup escape. But `seccomp:unconfined` + `SYS_PTRACE` is enough for kernel exploit primitives if a binary escapes userspace. |
+
+### What this means in practice
+
+- **Analyzing trusted binaries (CTF challenges, your own code, known-clean samples):** safe on your daily driver. The container still has network and filesystem isolation.
+- **Analyzing untrusted binaries (malware, suspicious downloads, bug bounties):** run inside a dedicated VM. Docker's isolation is not a sandbox — a malicious binary that exploits a kernel vulnerability can escape the container with these capabilities.
+- **Fuzzing with ASAN/UBSAN:** ASAN sometimes needs `ptrace` for symbolization. If you're fuzzing untrusted code, run the fuzzer in a VM too.
+
+### Recommended setup for untrusted work
+
+```bash
+# Option A: VM + Docker (strong)
+# Spin up an Ubuntu VM in VirtualBox/UTM, install Docker inside it, run toolbox there.
+
+# Option B: cloud VM (air-gapped from your network)
+# Spin up a $0.05/hr cloud instance, git clone, docker compose up.
+
+# Option C: tighten what you can
+# Drop seccomp:unconfined but keep SYS_PTRACE if you only need gdb:
+#   security_opt: []           # restore default seccomp profile
+#   cap_add: [SYS_PTRACE]      # keep just this
+# Some fuzzing tools (AFL++) will break — test first.
+```
+
+### Network exposure
+
+The gateway (`localhost:3100`) and Ghidra headless (`localhost:8089`) have **no
+authentication**. Default compose only exposes them to your loopback — safe. If you
+change `ports` to `0.0.0.0:3100:3100`, anyone on your network can call MCP tools
+(including `shell__exec` — arbitrary command execution inside the container).
+**Don't expose these ports to a public network interface.**
+
 ## MCP
 
 Copy the `toolbox` entry from [`.mcp.json`](.mcp.json) into your MCP client config:
@@ -283,14 +324,8 @@ docker exec toolbox ps aux | grep -E "gateway|ghidra|r2mcp|shell-mcp|angr"
 
 ## Security
 
-Compose adds `SYS_PTRACE` and disables seccomp — required by debuggers and fuzzers. 
-Run in an isolated VM when analyzing untrusted binaries.
+See [⚠️ Security warning](#security-warning) above. Container capabilities,
+isolation model, and recommendations for untrusted binaries are covered there.
 
-The gateway has no authentication. Don't expose port 3100 to a public network interface. 
-Default compose mapping (`127.0.0.1:3100:3100`) is safe.
-
-See [SECURITY.md](SECURITY.md) for vulnerability reporting and full security posture.
-
-## License
-
-MIT for project code. Bundled tools have their own licenses — see [NOTICE.md](NOTICE.md).
+Vulnerability reporting and scope: [SECURITY.md](SECURITY.md).
+License for bundled tools: [NOTICE.md](NOTICE.md).
