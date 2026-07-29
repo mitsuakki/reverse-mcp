@@ -348,6 +348,18 @@ class Gateway:
         ) -> list[TextContent | ImageContent | EmbeddedResource]:
             async with self._tools_lock:
                 if name not in self._tools:
+                    # If namespace is dynamic (e.g. ghidra), suggest how to
+                    # unlock instance-scoped tools instead of a bare "unknown".
+                    for ns, child_def in self._child_defs.items():
+                        prefix = f"{ns}__"
+                        if name.startswith(prefix) and child_def.dynamic:
+                            static_hint = ", ".join(
+                                f"{ns}__{t}" for t in child_def.static_tools[:2]
+                            )
+                            raise ValueError(
+                                f"Tool '{name}' requires a loaded binary. "
+                                f"Call {static_hint} first, then retry."
+                            )
                     raise ValueError(f"Unknown tool: {name}")
                 ns, orig_name, _tool = self._tools[name]
 
