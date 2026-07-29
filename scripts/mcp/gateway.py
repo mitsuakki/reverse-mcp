@@ -42,7 +42,6 @@ except ImportError:
 from mcp import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
 from mcp.server import Server
-from mcp.server.stdio import stdio_server
 from mcp.types import (
     CallToolResult,
     EmbeddedResource,
@@ -462,15 +461,7 @@ class Gateway:
         # Then clean up any remaining exit-stack resources
         await self._exit_stack.aclose()
 
-    async def run_stdio(self) -> None:
-        """Serve via stdio (docker exec transport)."""
-        async with stdio_server() as (read, write):
-            await self.server.run(
-                read, write, self.server.create_initialization_options()
-            )
-
     async def run_http(self, host: str = "0.0.0.0", port: int = 3100) -> None:
-        """Serve via StreamableHTTP (browser/remote transport)."""
         import uvicorn
         from mcp.server.streamable_http import StreamableHTTPServerTransport
 
@@ -509,26 +500,19 @@ class Gateway:
 async def main() -> None:
     import argparse
 
-    parser = argparse.ArgumentParser(description="MCP Gateway")
+    parser = argparse.ArgumentParser(description="MCP Gateway (StreamableHTTP)")
     parser.add_argument(
-        "--transport", choices=("stdio", "http"), default="stdio",
-        help="Transport mode (default: stdio)",
+        "--host", default="0.0.0.0", help="Bind address (default: 0.0.0.0)",
     )
     parser.add_argument(
-        "--host", default="0.0.0.0", help="HTTP bind address (default: 0.0.0.0)",
-    )
-    parser.add_argument(
-        "--port", type=int, default=3100, help="HTTP port (default: 3100)",
+        "--port", type=int, default=3100, help="Port (default: 3100)",
     )
     args = parser.parse_args()
 
     gateway = Gateway()
     try:
         await gateway.start()
-        if args.transport == "http":
-            await gateway.run_http(host=args.host, port=args.port)
-        else:
-            await gateway.run_stdio()
+        await gateway.run_http(host=args.host, port=args.port)
     finally:
         await gateway.close()
 

@@ -98,8 +98,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
             capstone \
             unicorn \
             pyelftools \
-            z3-solver \
-            pycparser<3.0; \
+            z3-solver; \
     else \
         echo "=== angr: skipped (BUILD_ANGR=0) ==="; \
     fi
