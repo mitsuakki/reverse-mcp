@@ -13,7 +13,7 @@ jobs:
       docker: ${{ steps.filter.outputs.docker }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Detect Docker-relevant file changes
         id: filter
@@ -41,7 +41,7 @@ jobs:
       build_time: ${{ steps.time.outputs.seconds }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -102,7 +102,7 @@ jobs:
     if: always() && !cancelled() && needs.build-or-pull.result == 'success'
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Smoke test MCP servers
         run: bash scripts/tests/smoke-test.sh --no-build --no-cleanup
@@ -173,7 +173,7 @@ jobs:
     if: always() && !cancelled() && needs.build-or-pull.result == 'success'
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
