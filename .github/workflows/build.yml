@@ -37,6 +37,8 @@ jobs:
   build-or-pull:
     runs-on: ubuntu-24.04
     needs: changes
+    outputs:
+      build_time: ${{ steps.time.outputs.seconds }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -46,6 +48,7 @@ jobs:
 
       - name: Build image (source changed)
         if: needs.changes.outputs.docker == 'true'
+        id: build
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -54,6 +57,14 @@ jobs:
           load: true
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Log build time
+        if: needs.changes.outputs.docker == 'true'
+        id: time
+        run: |
+          # docker/build-push-action doesn't expose timing; just note it was a build
+          echo "seconds=full-build" >> "$GITHUB_OUTPUT"
+          echo "Built from source — timing in job duration above"
 
       - name: Log in to GHCR
         if: needs.changes.outputs.docker == 'false'
@@ -65,17 +76,27 @@ jobs:
 
       - name: Pull image from GHCR
         if: needs.changes.outputs.docker == 'false'
+        id: pull
         run: |
           echo "Pulling latest image from GHCR..."
           if docker pull "ghcr.io/${{ github.repository }}:latest" 2>/dev/null; then
             docker tag "ghcr.io/${{ github.repository }}:latest" reverse-mcp-toolbox:latest
-            echo "Tagged as reverse-mcp-toolbox:latest"
+            echo "seconds=pulled-ghcr" >> "$GITHUB_OUTPUT"
+            echo "Pulled and tagged reverse-mcp-toolbox:latest"
           else
             echo "No image on GHCR yet — falling back to build..."
             docker compose build
+            echo "seconds=fallback-build" >> "$GITHUB_OUTPUT"
           fi
 
-  smoke-test:
+      - name: Image size
+        run: |
+          echo "=== Image size ==="
+          docker images reverse-mcp-toolbox --format 'table {{.Repository}}\t{{.Tag}}\t{{.Size}}'
+          SIZE=$(docker images reverse-mcp-toolbox --format '{{.Size}}' | head -1)
+          echo "IMAGE_SIZE=$SIZE" >> "$GITHUB_ENV"
+
+  test:
     runs-on: ubuntu-24.04
     needs: [changes, build-or-pull]
     if: always() && !cancelled() && needs.build-or-pull.result == 'success'
@@ -86,6 +107,11 @@ jobs:
       - name: Smoke test MCP servers
         run: bash scripts/tests/smoke-test.sh --no-build --no-cleanup
 
+      - name: Copy test fixtures into workspace
+        run: |
+          mkdir -p workspace/tests/fixtures
+          cp tests/fixtures/hello.elf tests/fixtures/HelloWorld.apk workspace/tests/fixtures/
+
       - name: RE tools test (r2, Ghidra, angr)
         run: |
           docker exec toolbox bash /opt/tools/scripts/tests/re-tools-test.sh
@@ -93,78 +119,6 @@ jobs:
       - name: CLI tools test (angr-solve, fuzz-init, ghidra-import)
         run: |
           docker exec toolbox bash /opt/tools/scripts/tests/cli-tools-test.sh
-
-      - name: Cleanup
-        if: always()
-        run: docker compose down
-
-  android-test:
-    runs-on: ubuntu-24.04
-    needs: [changes, build-or-pull]
-    if: always() && !cancelled() && needs.build-or-pull.result == 'success'
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Build with Android tools
-        run: BUILD_ANDROID=1 docker compose build
-
-      - name: Start container
-        run: docker compose up -d
-
-      - name: Wait for gateway
-        run: |
-          for i in $(seq 1 30); do
-            if curl -s -o /dev/null -w "%{http_code}" http://localhost:3100/mcp 2>/dev/null | grep -qE "^(406|200)"; then
-              echo "Gateway ready after ${i}s"
-              break
-            fi
-            sleep 1
-          done
-
-      - name: Android tools test (apktool, jadx, frida, objection)
-        run: |
-          docker exec toolbox bash /opt/tools/scripts/tests/android-tools-test.sh
-
-      - name: Cleanup
-        if: always()
-        run: docker compose down
-
-  profile:
-    runs-on: ubuntu-24.04
-    needs: [changes, build-or-pull]
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Build image and measure
-        # Always build fresh for accurate timing/size — uses GHA cache for speed.
-        run: |
-          echo "=== Build timing ==="
-          START=$(date +%s)
-          docker compose build 2>&1
-          END=$(date +%s)
-          echo "BUILD_TIME_SECONDS=$((END - START))" >> "$GITHUB_ENV"
-          echo "Build completed in $((END - START))s"
-
-      - name: Image size
-        run: |
-          echo "=== Image size ==="
-          docker images reverse-mcp-toolbox --format 'table {{.Repository}}\t{{.Tag}}\t{{.Size}}'
-          SIZE=$(docker images reverse-mcp-toolbox --format '{{.Size}}' | head -1)
-          echo "IMAGE_SIZE=$SIZE" >> "$GITHUB_ENV"
-
-      - name: Start container
-        run: |
-          docker compose up -d
-          echo "Waiting for gateway..."
-          for i in $(seq 1 30); do
-            if curl -s -o /dev/null -w "%{http_code}" http://localhost:3100/mcp 2>/dev/null | grep -qE "^(406|200)"; then
-              echo "Gateway ready after ${i}s"
-              break
-            fi
-            sleep 1
-          done
 
       - name: Component disk usage
         run: |
@@ -201,13 +155,62 @@ jobs:
 
       - name: Summary
         run: |
-          echo "### Profile Summary" >> "$GITHUB_STEP_SUMMARY"
+          echo "### CI Summary" >> "$GITHUB_STEP_SUMMARY"
           echo "| Metric | Value |" >> "$GITHUB_STEP_SUMMARY"
           echo "|--------|-------|" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Build time | ${BUILD_TIME_SECONDS}s |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Image source | ${{ needs.build-or-pull.outputs.build_time }} |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Image size | ${IMAGE_SIZE} |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Branch | ${{ github.ref_name }} |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Commit | ${{ github.sha }} |" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Cleanup
+        if: always()
+        run: docker compose down
+
+  android-test:
+    runs-on: ubuntu-24.04
+    needs: [changes, build-or-pull]
+    if: always() && !cancelled() && needs.build-or-pull.result == 'success'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build with Android tools
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          push: false
+          load: true
+          build-args: |
+            BUILD_ANDROID=1
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Start container
+        run: docker compose up -d --no-build
+
+      - name: Copy test fixtures into workspace
+        run: |
+          mkdir -p workspace/tests/fixtures
+          cp tests/fixtures/hello.elf tests/fixtures/HelloWorld.apk workspace/tests/fixtures/
+
+      - name: Wait for gateway
+        run: |
+          for i in $(seq 1 30); do
+            if curl -s -o /dev/null -w "%{http_code}" http://localhost:3100/mcp 2>/dev/null | grep -qE "^(406|200)"; then
+              echo "Gateway ready after ${i}s"
+              break
+            fi
+            sleep 1
+          done
+
+      - name: Android tools test (apktool, jadx, frida, objection)
+        run: |
+          docker exec toolbox bash /opt/tools/scripts/tests/android-tools-test.sh
 
       - name: Cleanup
         if: always()
