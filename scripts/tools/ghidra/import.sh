@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 #
-# load-ghidra.sh — Import a binary into Ghidra headless + load into MCP server.
+# import.sh — Import a binary into Ghidra headless + load into MCP server.
 #
 # Usage:
-#   ./scripts/load-ghidra.sh /workspace/ch2.bin                    # auto project name
-#   ./scripts/load-ghidra.sh /workspace/ch2.bin my-project         # named project
-#   ./scripts/load-ghidra.sh /workspace/ch2.bin my-project --no-analyze
+#   ./scripts/tools/ghidra/import.sh /workspace/ch2.bin                    # auto project name
+#   ./scripts/tools/ghidra/import.sh /workspace/ch2.bin my-project         # named project
+#   ./scripts/tools/ghidra/import.sh /workspace/ch2.bin my-project --no-analyze
 #
 # Env vars:
 #   GHIDRA_MCP_URL        MCP server URL (default http://127.0.0.1:8089)
@@ -13,15 +13,15 @@
 
 set -euo pipefail
 
+SCRIPT_NAME="ghidra-import"
+source "$(dirname "$0")/../../common/arglib.sh"
+
 # --- config ------------------------------------------------------------------
 GHIDRA_HOME="${GHIDRA_INSTALL_DIR:-/opt/tools/ghidra}"
 ANALYZE_HEADLESS="${GHIDRA_HOME}/support/analyzeHeadless"
 PROJECTS_DIR="${GHIDRA_PROJECTS_DIR:-/home/ctf/ghidra-projects}"
 MCP_URL="${GHIDRA_MCP_URL:-http://127.0.0.1:8089}"
 AUTH_TOKEN="${GHIDRA_MCP_AUTH_TOKEN:-re-toolbox-dev-secret}"
-
-log()  { echo "[ghidra-load] $*" >&2; }
-die()  { log "ERROR: $*"; exit 1; }
 
 # --- args --------------------------------------------------------------------
 BINARY=""

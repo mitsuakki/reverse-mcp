@@ -44,7 +44,7 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - frida 14.9.0 and objection 1.12.5 for dynamic instrumentation
 - pwntools 4.15.0, ropper, ROPgadget, keystone, LIEF, capstone, unicorn
 - Project `.mcp.json` for Claude Code auto-configuration
-- `load-ghidra.sh` CLI script for headless binary import
+- `tools/ghidra/import.sh` CLI script for headless binary import
 
 [Unreleased]: https://github.com/mitsuakki/reverse-mcp/compare/v1.0.0...main
 [1.0.0]: https://github.com/mitsuakki/reverse-mcp/releases/tag/v1.0.0

@@ -80,7 +80,7 @@ CHILDREN: list[ChildDef] = [
     ),
     ChildDef(
         namespace="ghidra",
-        command="/opt/tools/scripts/ghidra-lazy.sh",
+        command="/opt/tools/scripts/tools/ghidra/lazy-start.sh",
         args=[],
         env={"GHIDRA_MCP_URL": os.environ.get("GHIDRA_MCP_URL", "http://127.0.0.1:8089")},
         timeout_connect=45.0,  # headless cold-start is slow

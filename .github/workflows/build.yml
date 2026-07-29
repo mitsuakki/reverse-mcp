@@ -1,6 +1,6 @@
-name: Build image
+name: Build & Smoke Test
 
-# Validates the Dockerfile builds successfully on every push and PR.
+# Validates the Dockerfile builds AND every MCP server responds.
 # Does NOT push — just catches breakage early.
 
 on:
@@ -27,3 +27,13 @@ jobs:
           push: false
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  smoke-test:
+    runs-on: ubuntu-24.04
+    needs: build
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Smoke test MCP servers
+        run: bash scripts/tests/smoke-test.sh

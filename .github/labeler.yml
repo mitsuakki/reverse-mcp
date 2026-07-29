@@ -17,7 +17,7 @@ ghidra:
   - changed-files:
       - any-glob-to-any-file:
           - "scripts/mcp/bridge_mcp_ghidra.py"
-          - "scripts/load-ghidra.sh"
+          - "scripts/tools/ghidra/**"
 
 shell-mcp:
   - changed-files:
@@ -32,7 +32,12 @@ r2mcp:
 angr:
   - changed-files:
       - any-glob-to-any-file:
-          - "**/angr/**"
+          - "scripts/tools/angr/**"
+
+fuzzing:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "scripts/tools/fuzz/**"
 
 agents:
   - changed-files:

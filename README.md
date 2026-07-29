@@ -254,8 +254,8 @@ Shell in with `docker exec -it toolbox bash`.
 ### Key scripts
 
 ```bash
-/opt/tools/scripts/load-ghidra.sh /workspace/my-binary          # import + analyze
-/opt/tools/scripts/load-ghidra.sh /workspace/my-binary myproj   # named project
+/opt/tools/scripts/tools/ghidra/import.sh /workspace/my-binary          # import + analyze
+/opt/tools/scripts/tools/ghidra/import.sh /workspace/my-binary myproj   # named project
 ```
 
 ## Troubleshooting
@@ -381,11 +381,20 @@ docker exec toolbox ps aux | grep -E "gateway|ghidra|r2mcp|shell-mcp|angr"
 ├── docker/
 │   └── Dockerfile               Multi-stage build, pinned versions
 ├── scripts/
-│   ├── entrypoint.sh            Starts Ghidra MCP + gateway
-│   ├── load-ghidra.sh           CLI binary import into Ghidra
-│   └── mcp/
-│       ├── gateway.py           Composes all MCP servers behind one endpoint
-│       └── shell-mcp.py         Shell command MCP server
+│   ├── common/                    Shared argument parsing helpers
+│   ├── mcp/                       MCP server implementations
+│   │   ├── gateway.py            Composes all MCP servers behind one endpoint
+│   │   └── shell-mcp.py          Shell command MCP server
+│   ├── tools/                     Tool-specific CLI helpers
+│   │   ├── angr/solve.py         Symbolic execution helper
+│   │   ├── fuzz/init.sh          Fuzzing campaign initializer
+│   │   └── ghidra/
+│   │       ├── lazy-start.sh     Ghidra headless lazy-start wrapper
+│   │       └── import.sh         CLI binary import into Ghidra
+│   ├── tests/                     Test scripts
+│   │   └── smoke-test.sh         MCP server integration smoke test
+│   ├── entrypoint.sh              Container entrypoint
+│   └── profile.sh                 Resource usage profiler
 ├── .claude/
 │   ├── agents/                  RE agents (auto-loaded by Claude Code)
 │   └── settings.json            Project MCP config

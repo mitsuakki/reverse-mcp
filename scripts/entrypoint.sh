@@ -6,7 +6,7 @@ set -euo pipefail
 # ============================================================================
 
 # -- Ghidra headless MCP HTTP server -----------------------------------------
-# Ghidra headless is now started lazily by scripts/ghidra-lazy.sh on first
+# Ghidra headless is now started lazily by scripts/tools/ghidra/lazy-start.sh on first
 # ghidra__* tool call. The gateway child command invokes the wrapper, which
 # cold-starts headless if it isn't already running.
 
