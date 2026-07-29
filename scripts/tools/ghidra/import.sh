@@ -9,7 +9,7 @@
 #
 # Env vars:
 #   GHIDRA_MCP_URL        MCP server URL (default http://127.0.0.1:8089)
-#   GHIDRA_MCP_AUTH_TOKEN Bearer token (default re-toolbox-dev-secret)
+#   GHIDRA_MCP_AUTH_TOKEN Bearer token (default reverse-mcp-dev-secret)
 
 set -euo pipefail
 
@@ -20,7 +20,7 @@ GHIDRA_HOME="${GHIDRA_INSTALL_DIR:-/opt/tools/ghidra}"
 ANALYZE_HEADLESS="${GHIDRA_HOME}/support/analyzeHeadless"
 PROJECTS_DIR="${GHIDRA_PROJECTS_DIR:-/home/ctf/ghidra-projects}"
 MCP_URL="${GHIDRA_MCP_URL:-http://127.0.0.1:8089}"
-AUTH_TOKEN="${GHIDRA_MCP_AUTH_TOKEN:-re-toolbox-dev-secret}"
+AUTH_TOKEN="${GHIDRA_MCP_AUTH_TOKEN:-reverse-mcp-dev-secret}"
 
 BINARY=""
 PROJECT=""

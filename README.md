@@ -33,7 +33,7 @@ docker exec -it toolbox bash   # optional shell access
 | `GATEWAY_HTTP_HOST` | `0.0.0.0` | Bind address for the gateway. |
 | `GHIDRA_MCP_PORT` | `8089` | Ghidra headless MCP bridge port (internal). |
 | `GHIDRA_MCP_URL` | `http://127.0.0.1:8089` | Ghidra MCP endpoint. Point at `host.docker.internal:8080` for GUI mode. |
-| `GHIDRA_MCP_AUTH_TOKEN` | `re-toolbox-dev-secret` | Bearer token for Ghidra MCP health check. Change in production. |
+| `GHIDRA_MCP_AUTH_TOKEN` | `reverse-mcp-dev-secret` | Bearer token for Ghidra MCP health check. Change in production. |
 
 All variables work in `docker-compose.yml` and direct `docker run -e`.
 
@@ -294,7 +294,7 @@ docker exec toolbox cat /tmp/ghidra-mcp.log
 Health check Ghidra directly:
 
 ```bash
-curl -H "Authorization: Bearer re-toolbox-dev-secret" http://localhost:8089/health
+curl -H "Authorization: Bearer reverse-mcp-dev-secret" http://localhost:8089/health
 ```
 
 If that passes but `ghidra__*` tools are still missing, the bridge process
@@ -359,7 +359,7 @@ Per-child causes:
 docker compose ps
 docker compose logs toolbox --tail 50
 curl -s http://localhost:3100/mcp
-curl -s -H "Authorization: Bearer re-toolbox-dev-secret" http://localhost:8089/health
+curl -s -H "Authorization: Bearer reverse-mcp-dev-secret" http://localhost:8089/health
 docker exec toolbox cat /tmp/gateway-http.log
 docker exec toolbox cat /tmp/ghidra-mcp.log
 docker exec toolbox ps aux | grep -E "gateway|ghidra|r2mcp|shell-mcp|angr"

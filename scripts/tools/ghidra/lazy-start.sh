@@ -14,7 +14,7 @@ source "$(dirname "$0")/../../common/arglib.sh"
 
 GHIDRA_MCP_PORT="${GHIDRA_MCP_PORT:-8089}"
 GHIDRA_MCP_HOST="${GHIDRA_MCP_HOST:-0.0.0.0}"
-GHIDRA_MCP_TOKEN="${GHIDRA_MCP_AUTH_TOKEN:-re-toolbox-dev-secret}"
+GHIDRA_MCP_TOKEN="${GHIDRA_MCP_AUTH_TOKEN:-reverse-mcp-dev-secret}"
 
 # If already running, skip to bridge
 if curl -sf -o /dev/null -H "Authorization: Bearer ${GHIDRA_MCP_TOKEN}" \

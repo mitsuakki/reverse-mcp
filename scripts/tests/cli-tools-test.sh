@@ -39,7 +39,7 @@ BINARY="tests/fixtures/hello.elf"
 
 # Ghidra MCP config
 GHIDRA_MCP_PORT="${GHIDRA_MCP_PORT:-8089}"
-GHIDRA_MCP_TOKEN="${GHIDRA_MCP_AUTH_TOKEN:-re-toolbox-dev-secret}"
+GHIDRA_MCP_TOKEN="${GHIDRA_MCP_AUTH_TOKEN:-reverse-mcp-dev-secret}"
 
 # ---- Arg parsing -----------------------------------------------------------
 while [[ $# -gt 0 ]]; do
