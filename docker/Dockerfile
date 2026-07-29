@@ -76,7 +76,7 @@ ARG BUILD_ANGR
 # Bump these ARGs to upgrade.
 # NOTE: capstone, unicorn, claripy, pyelftools, z3-solver are left unpinned —
 # angr pins exact versions of its own transitive deps. Let pip resolve them.
-ARG ANGR_VERSION=9.2.194
+ARG ANGR_VERSION=9.3.1
 ARG PWNTOOLS_VERSION=4.15.0
 ARG FRIDA_VERSION=14.9.0
 ARG LIEF_VERSION=0.17.6
@@ -99,7 +99,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
             unicorn \
             pyelftools \
             z3-solver \
-            'pycparser<3.0'; \
+            pycparser<3.0; \
     else \
         echo "=== angr: skipped (BUILD_ANGR=0) ==="; \
     fi
