@@ -133,16 +133,20 @@ class Gateway:
         # to prevent concurrent restarts from racing.
         self._restart_counts: dict[str, int] = {}
         self._restart_locks: dict[str, asyncio.Lock] = {}
-        # Transport references stored outside _exit_stack so individual children
-        # can be torn down and recreated without closing the whole stack.
+        # Transport/session cleanup handles. Stored OUTSIDE _exit_stack because
+        # lazy children connect from call_tool (different anyio task than start()),
+        # and anyio rejects cross-task cancel-scope exit with RuntimeError.
+        # Each entry: (transport_ctx, session_ctx) — async context managers.
+        self._child_cleanup: dict[str, tuple[Any, Any]] = {}
         self._transports: dict[str, tuple[Any, Any]] = {}
 
     async def _connect_child(self, child: ChildDef) -> ClientSession:
         """Launch child process and return initialized session.
 
-        Transport is stored outside _exit_stack so individual children
-        can be torn down and recreated for crash recovery without
-        closing the global exit stack.
+        Enters stdio_client/ClientSession directly in the CURRENT task.
+        Does NOT use AsyncExitStack — lazy children connect from a
+        different task than start(), and anyio rejects cross-task
+        cancel-scope exit. Cleanup handles are stored in _child_cleanup.
         """
         env = os.environ.copy()
         env.update(child.env)
@@ -153,15 +157,14 @@ class Gateway:
             env=env,
         )
 
-        transport = await self._exit_stack.enter_async_context(
-            stdio_client(params)
-        )
-        read, write = transport
-        session = await self._exit_stack.enter_async_context(
-            ClientSession(read, write)
-        )
-        # Keep our own reference for targeted disconnect on restart.
-        self._transports[child.namespace] = transport
+        # Enter contexts directly in the calling task
+        transport_ctx = stdio_client(params)
+        read, write = await transport_ctx.__aenter__()
+        session_ctx = ClientSession(read, write)
+        session = await session_ctx.__aenter__()
+
+        self._child_cleanup[child.namespace] = (transport_ctx, session_ctx)
+        self._transports[child.namespace] = (read, write)
 
         await session.initialize()
         return session
@@ -186,21 +189,25 @@ class Gateway:
         return False
 
     async def _disconnect_child(self, ns: str) -> None:
-        """Tear down one child's session and transport. Best-effort."""
-        session = self._children.pop(ns, None)
-        transport = self._transports.pop(ns, (None, None))
-        if session is not None:
+        """Tear down one child's session and transport. Best-effort.
+
+        Uses the stored async context managers from _child_cleanup so
+        cleanup happens in the correct anyio task context.
+        """
+        self._children.pop(ns, None)
+        self._transports.pop(ns, None)
+        transport_ctx, session_ctx = self._child_cleanup.pop(ns, (None, None))
+
+        if session_ctx is not None:
             try:
-                await session.__aexit__(None, None, None)
+                await session_ctx.__aexit__(None, None, None)
             except Exception:
                 pass
-        read, write = transport
-        for stream in (read, write):
-            if stream is not None:
-                try:
-                    await stream.aclose()
-                except Exception:
-                    pass
+        if transport_ctx is not None:
+            try:
+                await transport_ctx.__aexit__(None, None, None)
+            except Exception:
+                pass
 
     async def _restart_child(self, ns: str) -> ClientSession:
         """Disconnect a dead child, spawn fresh process, re-register tools.
@@ -449,6 +456,10 @@ class Gateway:
             raise ValueError(f"No child handles prompt: {name}")
 
     async def close(self) -> None:
+        # Tear down children managed outside _exit_stack first
+        for ns in list(self._child_cleanup.keys()):
+            await self._disconnect_child(ns)
+        # Then clean up any remaining exit-stack resources
         await self._exit_stack.aclose()
 
     async def run_stdio(self) -> None:
