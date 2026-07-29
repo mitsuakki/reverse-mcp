@@ -7,13 +7,14 @@ on:
     branches: [main]
 
 jobs:
-  changes:
+  ci:
     runs-on: ubuntu-24.04
-    outputs:
-      docker: ${{ steps.filter.outputs.docker }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
 
       - name: Detect Docker-relevant file changes
         id: filter
@@ -26,29 +27,8 @@ jobs:
               - 'docker-compose.yml'
               - '.github/workflows/build.yml'
 
-      - name: Log change decision
-        run: |
-          if [ "${{ steps.filter.outputs.docker }}" = "true" ]; then
-            echo "Docker files changed — will build from source"
-          else
-            echo "Docker files unchanged — will pull from GHCR"
-          fi
-
-  build-or-pull:
-    runs-on: ubuntu-24.04
-    needs: changes
-    outputs:
-      build_time: ${{ steps.time.outputs.seconds }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
-
       - name: Build image (source changed)
-        if: needs.changes.outputs.docker == 'true'
-        id: build
+        if: steps.filter.outputs.docker == 'true'
         uses: docker/build-push-action@v7
         with:
           context: .
@@ -58,16 +38,8 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Log build time
-        if: needs.changes.outputs.docker == 'true'
-        id: time
-        run: |
-          # docker/build-push-action doesn't expose timing; just note it was a build
-          echo "seconds=full-build" >> "$GITHUB_OUTPUT"
-          echo "Built from source — timing in job duration above"
-
       - name: Log in to GHCR
-        if: needs.changes.outputs.docker == 'false'
+        if: steps.filter.outputs.docker == 'false'
         uses: docker/login-action@v4
         with:
           registry: ghcr.io
@@ -75,18 +47,15 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Pull image from GHCR
-        if: needs.changes.outputs.docker == 'false'
-        id: pull
+        if: steps.filter.outputs.docker == 'false'
         run: |
-          echo "Pulling latest image from GHCR..."
+          echo "Docker files unchanged — pulling from GHCR..."
           if docker pull "ghcr.io/${{ github.repository }}:latest" 2>/dev/null; then
             docker tag "ghcr.io/${{ github.repository }}:latest" reverse-mcp-toolbox:latest
-            echo "seconds=pulled-ghcr" >> "$GITHUB_OUTPUT"
             echo "Pulled and tagged reverse-mcp-toolbox:latest"
           else
             echo "No image on GHCR yet — falling back to build..."
             docker compose build
-            echo "seconds=fallback-build" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Image size
@@ -95,14 +64,6 @@ jobs:
           docker images reverse-mcp-toolbox --format 'table {{.Repository}}\t{{.Tag}}\t{{.Size}}'
           SIZE=$(docker images reverse-mcp-toolbox --format '{{.Size}}' | head -1)
           echo "IMAGE_SIZE=$SIZE" >> "$GITHUB_ENV"
-
-  test:
-    runs-on: ubuntu-24.04
-    needs: [changes, build-or-pull]
-    if: always() && !cancelled() && needs.build-or-pull.result == 'success'
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
 
       - name: Copy test fixtures into workspace
         run: |
@@ -153,31 +114,6 @@ jobs:
           echo "=== Top processes by RSS ==="
           docker exec toolbox ps aux --sort=-%mem | head -12
 
-      - name: Summary
-        run: |
-          echo "### CI Summary" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Metric | Value |" >> "$GITHUB_STEP_SUMMARY"
-          echo "|--------|-------|" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Image source | ${{ needs.build-or-pull.outputs.build_time }} |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Image size | ${IMAGE_SIZE} |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Branch | ${{ github.ref_name }} |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Commit | ${{ github.sha }} |" >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Cleanup
-        if: always()
-        run: docker compose down
-
-  android-test:
-    runs-on: ubuntu-24.04
-    needs: [changes, build-or-pull]
-    if: always() && !cancelled() && needs.build-or-pull.result == 'success'
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
-
       - name: Build with Android tools
         uses: docker/build-push-action@v7
         with:
@@ -190,16 +126,10 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Copy test fixtures into workspace
+      - name: Android tools test (apktool, jadx, frida, objection)
         run: |
-          mkdir -p workspace/tests/fixtures
-          cp tests/fixtures/hello.elf tests/fixtures/HelloWorld.apk workspace/tests/fixtures/
-
-      - name: Start container
-        run: docker compose up -d --no-build
-
-      - name: Wait for gateway
-        run: |
+          docker compose down 2>/dev/null || true
+          docker compose up -d --no-build
           for i in $(seq 1 30); do
             if curl -s -o /dev/null -w "%{http_code}" http://localhost:3100/mcp 2>/dev/null | grep -qE "^(406|200)"; then
               echo "Gateway ready after ${i}s"
@@ -207,11 +137,18 @@ jobs:
             fi
             sleep 1
           done
-
-      - name: Android tools test (apktool, jadx, frida, objection)
-        run: |
           docker exec toolbox bash /opt/tools/scripts/tests/android-tools-test.sh
+
+      - name: Summary
+        run: |
+          echo "### CI Summary" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Metric | Value |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|--------|-------|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Image source | ${{ steps.filter.outputs.docker == 'true' && 'built' || 'pulled' }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Image size | ${IMAGE_SIZE} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Branch | ${{ github.ref_name }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Commit | ${{ github.sha }} |" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Cleanup
         if: always()
-        run: docker compose down
+        run: docker compose down 2>/dev/null || true
