@@ -5,7 +5,7 @@ services:
       dockerfile: docker/Dockerfile
       args:
         BUILD_ANGR: ${BUILD_ANGR:-1}
-        BUILD_FUZZING: ${BUILD_FUZZING:-0}
+        BUILD_FUZZING: ${BUILD_FUZZING:-1}
         BUILD_ANDROID: ${BUILD_ANDROID:-0}
     container_name: toolbox
     stdin_open: true
