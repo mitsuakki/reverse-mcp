@@ -12,7 +12,7 @@ ARG BUILD_ANDROID=0
 # Stage 0: base — runtime OS packages only (no build toolchain)
 # Used by the final stage. Keeps image lean — no gcc/cmake/maven bloat.
 # ============================================================================
-FROM ubuntu:24.04 AS base
+FROM ubuntu:26.04 AS base
 
 ARG DEBIAN_FRONTEND=noninteractive
 ENV LANG=C.UTF-8 \
