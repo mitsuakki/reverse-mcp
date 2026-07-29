@@ -33,6 +33,12 @@ from contextlib import AsyncExitStack
 from dataclasses import dataclass, field
 from typing import Any
 
+try:
+    from anyio import BrokenResourceError, ClosedResourceError
+except ImportError:
+    BrokenResourceError = Exception  # type: ignore[assignment,misc]
+    ClosedResourceError = Exception  # type: ignore[assignment,misc]
+
 from mcp import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
 from mcp.server import Server
@@ -62,6 +68,10 @@ class ChildDef:
     timeout_connect: float = 15.0  # generous — ghidra bridge can be slow
     dynamic: bool = False  # True = tools change at runtime (e.g. after import_file)
     lazy: bool = False  # True = defer connection until first tool call
+    # Crash recovery: max auto-restart attempts (0 = disabled, -1 = unlimited).
+    # Restart spawns fresh child process and re-registers tools.
+    max_restarts: int = 0
+    restart_delay: float = 2.0  # seconds between restart attempts
     # For lazy children: tool names that are always available (registered as
     # placeholders so the MCP client can discover them before connection).
     static_tools: list[str] = field(default_factory=list)
@@ -81,6 +91,7 @@ CHILDREN: list[ChildDef] = [
         timeout_connect=45.0,  # headless cold-start is slow
         dynamic=True,
         lazy=True,  # only start Ghidra on first ghidra__* tool call
+        max_restarts=3,  # auto-restart if headless crashes
         static_tools=[  # always-available tools — registered as placeholders
             "import_file",
             "list_instances",
@@ -118,9 +129,21 @@ class Gateway:
         # namespaced_name -> (namespace, original_name, Tool)
         self._tools: dict[str, tuple[str, str, Tool]] = {}
         self._tools_lock = asyncio.Lock()
+        # Crash recovery: per-namespace restart counts and per-namespace locks
+        # to prevent concurrent restarts from racing.
+        self._restart_counts: dict[str, int] = {}
+        self._restart_locks: dict[str, asyncio.Lock] = {}
+        # Transport references stored outside _exit_stack so individual children
+        # can be torn down and recreated without closing the whole stack.
+        self._transports: dict[str, tuple[Any, Any]] = {}
 
     async def _connect_child(self, child: ChildDef) -> ClientSession:
-        """Launch child process and return initialized session."""
+        """Launch child process and return initialized session.
+
+        Transport is stored outside _exit_stack so individual children
+        can be torn down and recreated for crash recovery without
+        closing the global exit stack.
+        """
         env = os.environ.copy()
         env.update(child.env)
 
@@ -137,8 +160,85 @@ class Gateway:
         session = await self._exit_stack.enter_async_context(
             ClientSession(read, write)
         )
+        # Keep our own reference for targeted disconnect on restart.
+        self._transports[child.namespace] = transport
 
         await session.initialize()
+        return session
+
+    @staticmethod
+    def _is_transport_error(exc: BaseException) -> bool:
+        """True when `exc` is a transport/connection failure, not a tool error.
+
+        Tool-level errors return `isError: true` results — they don't raise.
+        Exceptions from `session.call_tool` mean the transport itself is dead:
+        subprocess crashed, pipe closed, or timeout.
+        """
+        if isinstance(exc, (BrokenResourceError, ClosedResourceError,
+                            BrokenPipeError, ConnectionResetError, EOFError)):
+            return True
+        # MCP SDK wraps some transport errors in RuntimeError
+        if isinstance(exc, RuntimeError):
+            msg = str(exc).lower()
+            if any(kw in msg for kw in ("not connected", "closed", "broken",
+                                         "connection", "transport")):
+                return True
+        return False
+
+    async def _disconnect_child(self, ns: str) -> None:
+        """Tear down one child's session and transport. Best-effort."""
+        session = self._children.pop(ns, None)
+        transport = self._transports.pop(ns, (None, None))
+        if session is not None:
+            try:
+                await session.__aexit__(None, None, None)
+            except Exception:
+                pass
+        read, write = transport
+        for stream in (read, write):
+            if stream is not None:
+                try:
+                    await stream.aclose()
+                except Exception:
+                    pass
+
+    async def _restart_child(self, ns: str) -> ClientSession:
+        """Disconnect a dead child, spawn fresh process, re-register tools.
+
+        Returns the new session. Raises on failure — caller should guard
+        with the restart limit.
+        """
+        child_def = self._child_defs.get(ns)
+        if child_def is None:
+            raise RuntimeError(f"No child definition for namespace: {ns}")
+
+        log.warning("%s: restarting crashed child process…", ns)
+
+        # Tear down old transport
+        await self._disconnect_child(ns)
+
+        # Remove stale tools for this namespace
+        async with self._tools_lock:
+            stale = [k for k, v in self._tools.items() if v[0] == ns]
+            for k in stale:
+                del self._tools[k]
+
+        # Spawn fresh child
+        await asyncio.sleep(child_def.restart_delay)
+        session = await asyncio.wait_for(
+            self._connect_child(child_def),
+            timeout=child_def.timeout_connect,
+        )
+        self._children[ns] = session
+
+        # Re-register tools
+        tools_result = await session.list_tools()
+        async with self._tools_lock:
+            for tool in tools_result.tools:
+                ns_name = self._ns_name(ns, tool.name)
+                self._tools[ns_name] = (ns, tool.name, tool)
+
+        log.info("%s: restarted successfully (%d tools)", ns, len(tools_result.tools))
         return session
 
     async def _connect_and_register(self, child_def: ChildDef) -> None:
@@ -259,12 +359,35 @@ class Gateway:
                     raise ValueError(f"MCP server not connected: {ns}")
 
             session = self._children[ns]
-            result: CallToolResult = await session.call_tool(orig_name, arguments)
+
+            child_def = self._child_defs.get(ns)
+            max_restarts = child_def.max_restarts if child_def else 0
+
+            try:
+                result: CallToolResult = await session.call_tool(orig_name, arguments)
+            except Exception as exc:
+                if max_restarts > 0 and self._is_transport_error(exc):
+                    # Serialise restarts per namespace so concurrent calls
+                    # don't spawn N child processes.
+                    lock = self._restart_locks.setdefault(ns, asyncio.Lock())
+                    async with lock:
+                        count = self._restart_counts.get(ns, 0)
+                        if count >= max_restarts:
+                            log.error("%s: restart limit reached (%d/%d) — giving up",
+                                      ns, count, max_restarts)
+                            raise
+                        self._restart_counts[ns] = count + 1
+                        log.warning("%s: child crashed (%s), restarting (%d/%d)…",
+                                    ns, exc, count + 1, max_restarts)
+                        session = await self._restart_child(ns)
+                    # Retry the call once after restart
+                    result = await session.call_tool(orig_name, arguments)
+                else:
+                    raise
 
             # Ghidra tools are dynamic: after import_file or connect_instance,
             # new instance-scoped tools (decompile, list_functions, debugger, …)
             # become available on the bridge. Refresh so they appear in list_tools.
-            child_def = self._child_defs.get(ns)
             if child_def and child_def.dynamic and orig_name in self._REFRESH_TRIGGERS:
                 await self._refresh_child_tools(ns)
 
@@ -281,8 +404,12 @@ class Gateway:
                         if hasattr(r, "uri"):
                             r.uri = f"{ns}__{r.uri}"
                         resources.append(r)
-                except Exception:
-                    pass  # child may not support resources
+                except Exception as exc:
+                    child_def = self._child_defs.get(ns)
+                    if child_def and child_def.max_restarts > 0 and self._is_transport_error(exc):
+                        log.warning("%s: dead during list_resources, skipping", ns)
+                    else:
+                        pass  # child may not support resources
             return resources
 
         @server.list_prompts()
@@ -294,8 +421,12 @@ class Gateway:
                     for p in res.prompts:
                         p.name = self._ns_name(ns, p.name)
                         prompts.append(p)
-                except Exception:
-                    pass
+                except Exception as exc:
+                    child_def = self._child_defs.get(ns)
+                    if child_def and child_def.max_restarts > 0 and self._is_transport_error(exc):
+                        log.warning("%s: dead during list_prompts, skipping", ns)
+                    else:
+                        pass
             return prompts
 
         # read_resource and get_prompt are routed dynamically
