@@ -24,6 +24,19 @@ Gateway listens on `localhost:3100`. Drop binaries in `./workspace` — mounted 
 docker exec -it toolbox bash   # optional shell access
 ```
 
+### Environment variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `ENABLE_GATEWAY_HTTP` | `1` | Start the MCP HTTP gateway at boot. Set to `0` to disable (e.g. if using only Ghidra GUI bridge or shell-only mode). |
+| `GATEWAY_HTTP_PORT` | `3100` | Port the MCP gateway listens on. |
+| `GATEWAY_HTTP_HOST` | `0.0.0.0` | Bind address for the gateway. |
+| `GHIDRA_MCP_PORT` | `8089` | Ghidra headless MCP bridge port (internal). |
+| `GHIDRA_MCP_URL` | `http://127.0.0.1:8089` | Ghidra MCP endpoint. Point at `host.docker.internal:8080` for GUI mode. |
+| `GHIDRA_MCP_AUTH_TOKEN` | `re-toolbox-dev-secret` | Bearer token for Ghidra MCP health check. Change in production. |
+
+All variables work in `docker-compose.yml` and direct `docker run -e`.
+
 ### Resource requirements
 
 | Resource | Minimum | Recommended | Notes |

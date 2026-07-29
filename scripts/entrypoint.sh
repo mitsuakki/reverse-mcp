@@ -5,7 +5,7 @@ set -euo pipefail
 # toolbox entrypoint — start background services, then hand off to CMD
 # ============================================================================
 
-if [[ "${ENABLE_GATEWAY_HTTP:-0}" == "1" ]]; then
+if [[ "${ENABLE_GATEWAY_HTTP:-1}" == "1" ]]; then
     GATEWAY_PORT="${GATEWAY_HTTP_PORT:-3100}"
     GATEWAY_HOST="${GATEWAY_HTTP_HOST:-0.0.0.0}"
     echo "[entrypoint] Starting MCP gateway HTTP on ${GATEWAY_HOST}:${GATEWAY_PORT}…"
