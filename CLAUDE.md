@@ -20,6 +20,15 @@ Container named `toolbox`. MCP connection auto-configured via `.mcp.json`.
 
 All agents use the MCP toolbox gateway — access to Ghidra, radare2, shell, and all CLI tools inside the container.
 
+## Communication rules
+
+- **NEVER use `docker exec`.** All container interaction goes through MCP tools:
+  - Shell commands → `mcp__toolbox__shell__exec` (full CLI access, Docker socket available)
+  - Binary analysis → `mcp__toolbox__r2__*` (radare2)
+  - Static RE → `mcp__toolbox__ghidra__*` (Ghidra headless)
+- Docker socket (`/var/run/docker.sock`) is available inside the container via `mcp__toolbox__shell__exec` — run nested containers, build images, or interact with the Docker daemon through the MCP shell tool.
+- `Bash` tool runs on the HOST (WSL), not inside the container. Use only for git, file ops, and host-level tasks.
+
 ## Quick examples
 
 ```
