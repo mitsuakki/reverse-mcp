@@ -96,8 +96,7 @@ Examples:
     # Make stdin symbolic (up to 256 bytes; angr will narrow as needed).
     stdin_size = 256
     symbolic_stdin = claripy.BVS("stdin", stdin_size * 8)
-    state.posix.files[0].content.from_bytes(symbolic_stdin)
-    state.posix.files[0].size = stdin_size
+    state.posix.stdin.content.from_bytes(symbolic_stdin)
 
     # -- Build simulation manager ----------------------------------------------
     simgr = project.factory.simulation_manager(state)
