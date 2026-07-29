@@ -91,7 +91,8 @@ change `ports` to `0.0.0.0:3100:3100`, anyone on your network can call MCP tools
 
 ## MCP
 
-Copy the `toolbox` entry from [`.mcp.json`](.mcp.json) into your MCP client config:
+Single HTTP endpoint — one config entry, all tools. Canonical definition in
+[`.mcp.json`](.mcp.json):
 
 ```json
 {
@@ -104,35 +105,17 @@ Copy the `toolbox` entry from [`.mcp.json`](.mcp.json) into your MCP client conf
 }
 ```
 
-Claude Code users: the project `.mcp.json` auto-configures this. Other clients:
+Claude Code picks this up automatically from the project root. For other clients,
+add a `toolbox` entry matching your client's config format:
 
-**Claude Desktop** — `claude_desktop_config.json`:
+| Client | Config file | Same as `.mcp.json`? | Notes |
+|---|---|---|---|
+| Claude Desktop | `claude_desktop_config.json` | ✅ Identical | Paste the block above as-is |
+| Cline (VS Code) | `cline_mcp_settings.json` | ✅ Identical | Workspace or user settings |
+| Continue | `~/.continue/config.json` | ⚠️ Nested | Wrap in `"experimental"` key (see below) |
+| Zed | `settings.json` | ⚠️ Different key | Uses `"context_servers"`, no `type` field (see below) |
 
-```json
-{
-  "mcpServers": {
-    "toolbox": {
-      "type": "http",
-      "url": "http://localhost:3100/mcp"
-    }
-  }
-}
-```
-
-**Cline (VS Code)** — `cline_mcp_settings.json` (workspace or user settings):
-
-```json
-{
-  "mcpServers": {
-    "toolbox": {
-      "type": "http",
-      "url": "http://localhost:3100/mcp"
-    }
-  }
-}
-```
-
-**Continue** — `~/.continue/config.json`:
+**Continue** — wrap the server block in `"experimental"`:
 
 ```json
 {
@@ -147,7 +130,7 @@ Claude Code users: the project `.mcp.json` auto-configures this. Other clients:
 }
 ```
 
-**Zed** — `settings.json` → `context_servers`:
+**Zed** — uses `"context_servers"` with a bare URL (no `type` wrapper):
 
 ```json
 {
