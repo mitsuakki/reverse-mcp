@@ -5,12 +5,6 @@ set -euo pipefail
 # toolbox entrypoint — start background services, then hand off to CMD
 # ============================================================================
 
-# -- Ghidra headless MCP HTTP server -----------------------------------------
-# Ghidra headless is now started lazily by scripts/tools/ghidra/lazy-start.sh on first
-# ghidra__* tool call. The gateway child command invokes the wrapper, which
-# cold-starts headless if it isn't already running.
-
-# -- MCP Gateway (StreamableHTTP) --------------------------------------------
 if [[ "${ENABLE_GATEWAY_HTTP:-0}" == "1" ]]; then
     GATEWAY_PORT="${GATEWAY_HTTP_PORT:-3100}"
     GATEWAY_HOST="${GATEWAY_HTTP_HOST:-0.0.0.0}"
@@ -32,6 +26,5 @@ if [[ "${ENABLE_GATEWAY_HTTP:-0}" == "1" ]]; then
     done
 fi
 
-# -- Hand off ----------------------------------------------------------------
 echo "[entrypoint] toolbox ready. Executing: $*"
 exec "$@"

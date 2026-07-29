@@ -16,14 +16,14 @@ GHIDRA_MCP_PORT="${GHIDRA_MCP_PORT:-8089}"
 GHIDRA_MCP_HOST="${GHIDRA_MCP_HOST:-0.0.0.0}"
 GHIDRA_MCP_TOKEN="${GHIDRA_MCP_AUTH_TOKEN:-re-toolbox-dev-secret}"
 
-# -- If headless already running, skip to bridge --------------------------------
+# If already running, skip to bridge
 if curl -sf -o /dev/null -H "Authorization: Bearer ${GHIDRA_MCP_TOKEN}" \
         "http://127.0.0.1:${GHIDRA_MCP_PORT}/health" 2>/dev/null; then
     log "Headless already running on :${GHIDRA_MCP_PORT}"
     exec python3 /opt/tools/ghidra-mcp/bridge_mcp_ghidra.py "$@"
 fi
 
-# -- Cold-start headless --------------------------------------------------------
+# Cold-start headless
 GHIDRA_HOME="${GHIDRA_INSTALL_DIR:-/opt/tools/ghidra}"
 GHIDRA_JAR="/opt/tools/ghidra-mcp/docker/GhidraMCPHeadless.jar"
 
@@ -78,5 +78,5 @@ if ! kill -0 "${GHIDRA_PID}" 2>/dev/null; then
     die "headless failed to start"
 fi
 
-# -- Hand off to bridge ---------------------------------------------------------
+# Hand off to bridge
 exec python3 /opt/tools/ghidra-mcp/bridge_mcp_ghidra.py "$@"

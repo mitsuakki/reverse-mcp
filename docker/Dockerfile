@@ -1,6 +1,14 @@
 # syntax=docker/dockerfile:1
 
 # ============================================================================
+# Build args — control which optional components are included.
+# Set to 0 to skip:  BUILD_ANGR=0 BUILD_FUZZING=0 BUILD_ANDROID=0
+# ============================================================================
+ARG BUILD_ANGR=1
+ARG BUILD_FUZZING=0
+ARG BUILD_ANDROID=0
+
+# ============================================================================
 # Stage 0: base — runtime OS packages only (no build toolchain)
 # Used by the final stage. Keeps image lean — no gcc/cmake/maven bloat.
 # ============================================================================
@@ -62,6 +70,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 # ============================================================================
 FROM base-build AS python
 
+ARG BUILD_ANGR
+
 # Versions pinned for reproducible builds.
 # Bump these ARGs to upgrade.
 # NOTE: capstone, unicorn, claripy, pyelftools, z3-solver are left unpinned —
@@ -79,14 +89,20 @@ ARG MCP_VERSION=1.13.0
 
 # Layer 1: angr + transitive heavy deps (slow build, rarely bumped).
 # These are pinned by angr itself — let pip resolve exact versions.
+# BUILD_ANGR=0 skips this — saves ~800MB in final image.
 RUN --mount=type=cache,target=/root/.cache/pip \
-    pip3 install --break-system-packages \
-        angr==${ANGR_VERSION} \
-        claripy \
-        capstone \
-        unicorn \
-        pyelftools \
-        z3-solver
+    if [ "${BUILD_ANGR}" != "0" ]; then \
+        pip3 install --break-system-packages \
+            angr==${ANGR_VERSION} \
+            claripy \
+            capstone \
+            unicorn \
+            pyelftools \
+            z3-solver \
+            'pycparser<3.0'; \
+    else \
+        echo "=== angr: skipped (BUILD_ANGR=0) ==="; \
+    fi
 
 # Layer 2: standalone tools (lighter, bumped more often).
 # Bumping PWNTOOLS_VERSION or FRIDA_VERSION only invalidates this layer.
@@ -100,8 +116,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
         lief==${LIEF_VERSION} \
         frida-tools==${FRIDA_VERSION} \
         objection==${OBJECTION_VERSION} \
-        mcp==${MCP_VERSION} \
-        'pycparser==2.22'
+        mcp==${MCP_VERSION}
 
 
 # ============================================================================
@@ -136,6 +151,7 @@ RUN r2pm -U
 RUN r2pm -ci r2mcp r2ghidra r2ghidra-sleigh || true \
     && cd /home/ctf/.local/share/radare2/r2pm/git/r2mcp/src \
     && sed -i 's/r_core_call_str_at/r_core_cmd_str_at/g' tools.c \
+    && sed -i 's/r_table_new ("tools", NULL)/r_table_new ("tools")/' tools.c \
     && make clean && make && make user-install
 USER root
 
@@ -179,41 +195,55 @@ RUN --mount=type=cache,target=/root/.m2/repository \
 
 # ============================================================================
 # Stage 4: fuzzing — AFL++, honggfuzz
+# BUILD_FUZZING=0 skips — saves ~200MB in final image.
 # ============================================================================
 FROM base-build AS fuzzing
 
-# -- AFL++ ------------------------------------------------------------------
-ARG AFLPLUSPLUS_VERSION=v5.00c
+ARG BUILD_FUZZING
 
-RUN git clone --depth 1 --branch ${AFLPLUSPLUS_VERSION} \
-        https://github.com/AFLplusplus/AFLplusplus /opt/tools/AFLplusplus-src \
+ARG AFLPLUSPLUS_VERSION=v5.00c
+ARG HONGGFUZZ_VERSION=2.6
+
+RUN mkdir -p /opt/tools/fuzzing/bin \
+    && if [ "${BUILD_FUZZING}" = "0" ]; then \
+         echo "=== fuzzing: skipped (BUILD_FUZZING=0) ==="; \
+         exit 0; \
+       fi \
+    && echo "=== Building AFL++ ${AFLPLUSPLUS_VERSION} ===" \
+    && git clone --depth 1 --branch ${AFLPLUSPLUS_VERSION} \
+            https://github.com/AFLplusplus/AFLplusplus /opt/tools/AFLplusplus-src \
     && cd /opt/tools/AFLplusplus-src \
     && make distrib -j"$(nproc)" \
     && PREFIX=/opt/tools/fuzzing make install \
-    && rm -rf /opt/tools/AFLplusplus-src
-
-# -- honggfuzz --------------------------------------------------------------
-ARG HONGGFUZZ_VERSION=2.6
-
-RUN git clone --depth 1 --branch ${HONGGFUZZ_VERSION} \
-        https://github.com/google/honggfuzz /opt/tools/honggfuzz-src \
+    && rm -rf /opt/tools/AFLplusplus-src \
+    && echo "=== Building honggfuzz ${HONGGFUZZ_VERSION} ===" \
+    && git clone --depth 1 --branch ${HONGGFUZZ_VERSION} \
+            https://github.com/google/honggfuzz /opt/tools/honggfuzz-src \
     && cd /opt/tools/honggfuzz-src \
-    && make -j"$(nproc)"
-RUN cd /opt/tools/honggfuzz-src \
+    && make -j"$(nproc)" \
     && PREFIX=/opt/tools/fuzzing make install \
     && rm -rf /opt/tools/honggfuzz-src
 
 
 # ============================================================================
 # Stage 5: android — platform-tools, apktool, jadx
+# BUILD_ANDROID=0 skips — saves ~165MB in final image.
 # ============================================================================
 FROM base-build AS android
+
+ARG BUILD_ANDROID
 
 ARG PLATFORM_TOOLS_VERSION=37.0.0
 ARG APKTOOL_VERSION=2.10.0
 ARG JADX_VER=1.5.1
 
-RUN wget -q -O /tmp/platform-tools.zip \
+RUN mkdir -p /opt/tools/platform-tools /opt/tools/jadx/bin \
+    && touch /opt/tools/apktool.jar \
+    && if [ "${BUILD_ANDROID}" = "0" ]; then \
+         echo "=== android: skipped (BUILD_ANDROID=0) ==="; \
+         exit 0; \
+       fi \
+    && wget -q -O /tmp/platform-tools.zip \
         "https://dl.google.com/android/repository/platform-tools_r${PLATFORM_TOOLS_VERSION}-linux.zip" \
     && unzip -q /tmp/platform-tools.zip -d /opt/tools \
     && rm /tmp/platform-tools.zip \
@@ -230,6 +260,10 @@ RUN wget -q -O /tmp/platform-tools.zip \
 # FROM base (NOT base-build!) — ~400MB smaller without gcc/cmake/maven.
 # ============================================================================
 FROM base AS final
+
+ARG BUILD_ANGR
+ARG BUILD_FUZZING
+ARG BUILD_ANDROID
 
 # --- Python packages (pip-installed modules + entry-point scripts) ----------
 COPY --from=python /usr/local/lib/ /usr/local/lib/
@@ -249,19 +283,23 @@ COPY --from=r2-ghidra /opt/tools/ghidra-mcp /opt/tools/ghidra-mcp
 COPY --from=r2-ghidra /usr/local/lib/ /usr/local/lib/
 COPY --from=r2-ghidra /usr/local/bin/ /usr/local/bin/
 
-# --- Fuzzing tools ----------------------------------------------------------
+# --- Fuzzing tools (optional: BUILD_FUZZING=0 skips) ------------------------
 COPY --from=fuzzing /opt/tools/fuzzing /opt/tools/fuzzing
 
-# --- Android tools ----------------------------------------------------------
+# --- Android tools (optional: BUILD_ANDROID=0 skips) ------------------------
 COPY --from=android /opt/tools/platform-tools /opt/tools/platform-tools
 COPY --from=android /opt/tools/apktool.jar /opt/tools/apktool.jar
 COPY --from=android /opt/tools/jadx /opt/tools/jadx
 
-# apktool wrapper + jadx symlinks
-RUN printf '#!/bin/sh\nexec java -jar /opt/tools/apktool.jar "$@"\n' > /usr/local/bin/apktool \
-    && chmod +x /usr/local/bin/apktool \
-    && ln -s /opt/tools/jadx/bin/jadx /usr/local/bin/jadx \
-    && ln -s /opt/tools/jadx/bin/jadx-gui /usr/local/bin/jadx-gui
+# apktool wrapper + jadx symlinks (only if android was actually built)
+RUN if [ -s /opt/tools/apktool.jar ]; then \
+        printf '#!/bin/sh\nexec java -jar /opt/tools/apktool.jar "$@"\n' > /usr/local/bin/apktool \
+        && chmod +x /usr/local/bin/apktool; \
+    fi \
+    && if [ -x /opt/tools/jadx/bin/jadx ]; then \
+        ln -sf /opt/tools/jadx/bin/jadx /usr/local/bin/jadx \
+        && ln -sf /opt/tools/jadx/bin/jadx-gui /usr/local/bin/jadx-gui; \
+    fi
 
 # --- Environment ------------------------------------------------------------
 ENV GHIDRA_INSTALL_DIR=/opt/tools/ghidra
@@ -272,7 +310,8 @@ ENV PKG_CONFIG_PATH="/opt/tools/radare2/lib/pkgconfig:${PKG_CONFIG_PATH:-}"
 # --- Scripts (most-frequently-changed — keep LAST) --------------------------
 COPY scripts/ /opt/tools/scripts/
 
-RUN chmod +x /opt/tools/scripts/*.sh \
+RUN find /opt/tools/scripts -name '*.sh' -exec chmod +x {} + \
+    && find /opt/tools/scripts -name '*.py' -exec chmod +x {} + \
     && mkdir -p /home/ctf/.config/ghidra \
     && chown -R ctf:ctf /opt/tools /home/ctf
 

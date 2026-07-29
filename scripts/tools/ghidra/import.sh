@@ -16,14 +16,12 @@ set -euo pipefail
 SCRIPT_NAME="ghidra-import"
 source "$(dirname "$0")/../../common/arglib.sh"
 
-# --- config ------------------------------------------------------------------
 GHIDRA_HOME="${GHIDRA_INSTALL_DIR:-/opt/tools/ghidra}"
 ANALYZE_HEADLESS="${GHIDRA_HOME}/support/analyzeHeadless"
 PROJECTS_DIR="${GHIDRA_PROJECTS_DIR:-/home/ctf/ghidra-projects}"
 MCP_URL="${GHIDRA_MCP_URL:-http://127.0.0.1:8089}"
 AUTH_TOKEN="${GHIDRA_MCP_AUTH_TOKEN:-re-toolbox-dev-secret}"
 
-# --- args --------------------------------------------------------------------
 BINARY=""
 PROJECT=""
 ANALYZE="--analyze"
@@ -63,7 +61,6 @@ log "Projects dir:  $PROJECTS_DIR"
 log "MCP server:    $MCP_URL"
 log "Analyze:       ${ANALYZE:--no-analyze}"
 
-# --- step 1: check MCP server -------------------------------------------------
 log "Checking MCP server..."
 HEALTH="$(curl -sf "${MCP_URL}/health" 2>&1 || true)"
 if echo "$HEALTH" | grep -q '"status".*"healthy"'; then
@@ -72,7 +69,6 @@ else
   die "MCP server not healthy at ${MCP_URL}: ${HEALTH:-no response}"
 fi
 
-# --- step 2: import via analyzeHeadless ---------------------------------------
 log "Importing $BINARY_NAME into project '$PROJECT'..."
 if [[ ! -d "$PROJECTS_DIR/$PROJECT" ]]; then
   log "  Creating new project: $PROJECTS_DIR/$PROJECT"
@@ -97,7 +93,6 @@ if [[ "$EXIT_CODE" -ne 0 ]]; then
 fi
 log "  Import done."
 
-# --- step 3: load into MCP server ---------------------------------------------
 log "Loading $BINARY_NAME into MCP server..."
 RESP="$(curl -sf -X POST "${MCP_URL}/load_program" \
   -H "Authorization: Bearer ${AUTH_TOKEN}" \
@@ -112,7 +107,6 @@ else
   # load_program just makes it available to the MCP bridge.
 fi
 
-# --- step 4: verify -----------------------------------------------------------
 log "Verifying..."
 HEALTH="$(curl -sf "${MCP_URL}/health" 2>&1)"
 if echo "$HEALTH" | grep -q '"program_loaded":true'; then

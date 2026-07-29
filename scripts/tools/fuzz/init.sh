@@ -19,7 +19,6 @@ set -euo pipefail
 SCRIPT_NAME="fuzz-init"
 source "$(dirname "$0")/../../common/arglib.sh"
 
-# --- defaults (env-overridable) ---------------------------------------------
 FUZZING_DIR="${FUZZING_DIR:-/opt/tools/fuzzing}"
 AFL_FUZZ="${AFL_FUZZ:-${FUZZING_DIR}/bin/afl-fuzz}"
 HONGGFUZZ="${HONGGFUZZ:-${FUZZING_DIR}/bin/honggfuzz}"
@@ -46,7 +45,6 @@ usage() {
     exit 0
 }
 
-# --- args ------------------------------------------------------------------
 BINARY=""
 ENGINE=""
 CORPUS="./corpus"
@@ -70,7 +68,6 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# --- validation ------------------------------------------------------------
 require_binary "${BINARY}"
 [[ -n "${ENGINE}" ]] || die "--engine is required (afl or honggfuzz)"
 
@@ -86,7 +83,6 @@ case "${ENGINE}" in
         ;;
 esac
 
-# --- setup directories -----------------------------------------------------
 BINARY_NAME="$(basename "${BINARY}")"
 CAMPAIGN_NAME="${BINARY_NAME}-${ENGINE}"
 
@@ -126,7 +122,6 @@ else
     log "Corpus has ${SEED_COUNT} seed file(s)."
 fi
 
-# --- write run script -------------------------------------------------------
 RUN_SCRIPT="${OUTPUT}/run-${CAMPAIGN_NAME}.sh"
 log "Writing run script: ${RUN_SCRIPT}"
 
@@ -201,7 +196,6 @@ esac
 
 chmod +x "${RUN_SCRIPT}"
 
-# --- summary ----------------------------------------------------------------
 echo
 log "Campaign ready."
 log "  Corpus:      ${CORPUS}"

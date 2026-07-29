@@ -18,7 +18,6 @@ set -euo pipefail
 SCRIPT_NAME="smoke-test"
 source "$(dirname "$0")/../common/arglib.sh"
 
-# --- defaults ---------------------------------------------------------------
 DO_BUILD=1
 DO_CLEANUP=1
 GATEWAY_PORT="${GATEWAY_PORT:-3100}"
@@ -27,7 +26,7 @@ GHIDRA_MCP_TOKEN="${GHIDRA_MCP_AUTH_TOKEN:-re-toolbox-dev-secret}"
 STARTUP_WAIT=60
 RESULTS=()
 
-# --- usage ------------------------------------------------------------------
+
 usage() {
     echo "Usage: $(basename "$0") [options]"
     echo
@@ -45,7 +44,6 @@ usage() {
     exit 0
 }
 
-# --- args ------------------------------------------------------------------
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --no-build)   DO_BUILD=0; shift ;;
@@ -55,8 +53,6 @@ while [[ $# -gt 0 ]]; do
         *)            die "Unknown argument: $1" ;;
     esac
 done
-
-# --- helpers ----------------------------------------------------------------
 
 _pass() {
     RESULTS+=("PASS")
@@ -87,27 +83,18 @@ _check() {
     fi
 }
 
-# ---- main ------------------------------------------------------------------
-
 echo "=== toolbox smoke test ==="
 echo "Started: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
-# -- build -------------------------------------------------------------------
 if [[ "$DO_BUILD" -eq 1 ]]; then
-    echo
     echo "--- Build ---"
     docker compose build 2>&1 | tail -5
     echo "Build done."
 fi
 
-# -- start -------------------------------------------------------------------
 echo
 echo "--- Start ---"
 docker compose up -d 2>&1
-
-# -- wait for gateway ---------------------------------------------------------
-echo
-echo "--- Wait for gateway (max ${STARTUP_WAIT}s) ---"
 GATEWAY_READY=0
 for i in $(seq 1 "$STARTUP_WAIT"); do
     # StreamableHTTP MCP returns 406 for bare GET — that's a live server.
@@ -126,18 +113,11 @@ if [[ "$GATEWAY_READY" -eq 0 ]]; then
     exit 1
 fi
 
-# -- gateway HTTP check ------------------------------------------------------
-_check "gateway-http" \
-    "curl -s -o /dev/null -w '%{http_code}' http://localhost:${GATEWAY_PORT}/mcp | grep -qE '^(406|200)'"
-
-# -- radare2 -----------------------------------------------------------------
 # Verify r2 binary works — r2mcp child uses the same binary.
 _check "radare2" \
     "docker exec toolbox r2 -q -c '?e smoke-ok' /bin/true 2>&1 | grep -q 'smoke-ok'"
 
-# -- ghidra headless ---------------------------------------------------------
-# Lazy-start: headless may not be running. If health endpoint is cold,
-# start headless in the background, wait for health, then kill it.
+# Lazy-start: headless may not be running. Start it, health-check, then kill.
 _check_ghidra() {
     local label="ghidra-headless"
 
@@ -232,9 +212,7 @@ _check_ghidra() {
 
 _check_ghidra
 
-# -- shell-mcp ---------------------------------------------------------------
 # Verify shell-mcp.py loads and constructs its server without error.
-# File has a hyphen in the name — use importlib, not `import shell-mcp`.
 _check "shell-mcp" \
     "docker exec toolbox python3 -c \"
 import importlib.util, sys
@@ -244,14 +222,9 @@ spec.loader.exec_module(mod)
 print('shell-mcp', mod.server.name)
 \" 2>&1 | grep -q 'shell-mcp'"
 
-# -- angr --------------------------------------------------------------------
-# angr import is heavy — verify it loads without error (timeout higher).
-# Capture output first, then grep. piping directly to grep -q causes
-# SIGPIPE because angr prints warnings that match 'angr' early.
 _check "angr" \
     "docker exec toolbox timeout 120 python3 -c 'import angr; print(\"angr\", angr.__version__)' > /tmp/angr-smoke.txt 2>&1; grep -q 'angr' /tmp/angr-smoke.txt"
 
-# -- report ------------------------------------------------------------------
 echo
 echo "=== Results ==="
 
@@ -268,7 +241,6 @@ echo "  Passed: $PASS_COUNT"
 echo "  Failed: $FAIL_COUNT"
 echo
 
-# -- cleanup -----------------------------------------------------------------
 if [[ "$DO_CLEANUP" -eq 1 ]]; then
     echo "--- Cleanup ---"
     docker compose down 2>&1 | tail -3

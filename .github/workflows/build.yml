@@ -1,7 +1,4 @@
-name: Build & Smoke Test
-
-# Validates the Dockerfile builds AND every MCP server responds.
-# Does NOT push — just catches breakage early.
+name: Build, Smoke Test & Profile
 
 on:
   push:
@@ -37,3 +34,85 @@ jobs:
 
       - name: Smoke test MCP servers
         run: bash scripts/tests/smoke-test.sh
+
+  profile:
+    runs-on: ubuntu-24.04
+    needs: build
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build image and measure
+        run: |
+          echo "=== Build timing ==="
+          START=$(date +%s)
+          docker compose build 2>&1
+          END=$(date +%s)
+          echo "BUILD_TIME_SECONDS=$((END - START))" >> "$GITHUB_ENV"
+          echo "Build completed in $((END - START))s"
+
+      - name: Image size
+        run: |
+          echo "=== Image size ==="
+          docker images reverse-mcp-toolbox --format 'table {{.Repository}}\t{{.Tag}}\t{{.Size}}'
+          SIZE=$(docker images reverse-mcp-toolbox --format '{{.Size}}' | head -1)
+          echo "IMAGE_SIZE=$SIZE" >> "$GITHUB_ENV"
+
+      - name: Start container
+        run: |
+          docker compose up -d
+          echo "Waiting for gateway..."
+          for i in $(seq 1 30); do
+            if curl -s -o /dev/null -w "%{http_code}" http://localhost:3100/mcp 2>/dev/null | grep -qE "^(406|200)"; then
+              echo "Gateway ready after ${i}s"
+              break
+            fi
+            sleep 1
+          done
+
+      - name: Component disk usage
+        run: |
+          echo "=== Component disk usage ==="
+          docker exec toolbox bash -c '
+          du_comp() {
+            local label="$1" path="$2"
+            if [ -e "$path" ]; then
+              printf "%-35s %8s\n" "$label" "$(du -sh "$path" 2>/dev/null | cut -f1)"
+            else
+              printf "%-35s %8s\n" "$label" "(absent)"
+            fi
+          }
+          du_comp "Ghidra headless"             /opt/tools/ghidra
+          du_comp "radare2 (build+source)"      /opt/tools/radare2
+          du_comp "radare2 source tree"         /opt/tools/radare2-src
+          du_comp "ghidra-mcp bridge"           /opt/tools/ghidra-mcp
+          du_comp "fuzzing (all)"               /opt/tools/fuzzing
+          du_comp "Android platform-tools"      /opt/tools/platform-tools
+          du_comp "jadx"                        /opt/tools/jadx
+          du_comp "apktool"                     /opt/tools/apktool.jar
+          du_comp "Python site-packages"        /usr/local/lib/python3*/dist-packages
+          du_comp "r2pm plugins"                /home/ctf/.local/share/radare2/r2pm
+          du_comp "Ghidra projects volume"      /home/ctf/.config/ghidra
+          '
+
+      - name: Memory usage
+        run: |
+          echo "=== Memory usage ==="
+          docker exec toolbox free -h
+          echo
+          echo "=== Top processes by RSS ==="
+          docker exec toolbox ps aux --sort=-%mem | head -12
+
+      - name: Summary
+        run: |
+          echo "### Profile Summary" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Metric | Value |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|--------|-------|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Build time | ${BUILD_TIME_SECONDS}s |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Image size | ${IMAGE_SIZE} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Branch | ${{ github.ref_name }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Commit | ${{ github.sha }} |" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Cleanup
+        if: always()
+        run: docker compose down

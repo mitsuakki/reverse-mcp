@@ -16,8 +16,6 @@
 # Callers should set SCRIPT_NAME for log prefix, or we derive it.
 : "${SCRIPT_NAME:=$(basename "$0")}"
 
-# ---- logging ----------------------------------------------------------------
-
 log() {
     echo "[${SCRIPT_NAME}] $*" >&2
 }
@@ -27,8 +25,7 @@ die() {
     exit 1
 }
 
-# ---- default usage (override in your script) --------------------------------
-
+# Override in your script
 usage() {
     echo "Usage: $(basename "$0") --binary <file> [options]"
     echo
@@ -38,8 +35,6 @@ usage() {
     echo "  --help, -h       Show this help"
     exit 0
 }
-
-# ---- validators -------------------------------------------------------------
 
 require_binary() {
     local path="${1:-}"

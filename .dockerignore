@@ -1,5 +1,13 @@
 .git
+.gitignore
+.gitattributes
 workspace
 *.md
 LICENSE
-.gitignore
+NOTICE.md
+CHANGELOG.md
+CONTRIBUTING.md
+SECURITY.md
+.claude
+.github
+.mcp.json

@@ -25,7 +25,6 @@ logging.basicConfig(
 )
 log = logging.getLogger("shell-mcp")
 
-# Security: commands with destructive or interactive potential blocked
 BLOCKED_COMMANDS = [
     "rm -rf /",
     "mkfs.",
@@ -87,7 +86,6 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
         int(arguments.get("timeout", DEFAULT_TIMEOUT)), MAX_TIMEOUT
     )
 
-    # Basic safety check
     for blocked in BLOCKED_COMMANDS:
         if blocked in command:
             return [TextContent(
@@ -95,7 +93,6 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                 text=f"Blocked: command matches blocked pattern '{blocked}'",
             )]
 
-    # Resolve workdir
     if not os.path.isdir(workdir):
         return [TextContent(
             type="text",

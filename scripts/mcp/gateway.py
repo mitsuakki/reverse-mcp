@@ -45,18 +45,13 @@ from mcp.types import (
     Tool,
 )
 
-# --- Logging to stderr so stdout stays clean for MCP transport -----------------
+# Logging to stderr so stdout stays clean for MCP transport
 logging.basicConfig(
     level=logging.WARNING,
     format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
     stream=sys.stderr,
 )
 log = logging.getLogger("gateway")
-
-
-# ===========================================================================
-# Child process definitions
-# ===========================================================================
 
 @dataclass
 class ChildDef:
@@ -109,11 +104,6 @@ CHILDREN: list[ChildDef] = [
     ),
 ]
 
-
-# ===========================================================================
-# Gateway
-# ===========================================================================
-
 class Gateway:
     """Composes child MCP servers behind a single stdio transport."""
 
@@ -128,8 +118,6 @@ class Gateway:
         # namespaced_name -> (namespace, original_name, Tool)
         self._tools: dict[str, tuple[str, str, Tool]] = {}
         self._tools_lock = asyncio.Lock()
-
-    # ---- child lifecycle ------------------------------------------------------
 
     async def _connect_child(self, child: ChildDef) -> ClientSession:
         """Launch child process and return initialized session."""
@@ -229,13 +217,9 @@ class Gateway:
         except Exception:
             log.exception("failed to refresh %s tools", ns)
 
-    # ---- namespacing ----------------------------------------------------------
-
     @staticmethod
     def _ns_name(ns: str, name: str) -> str:
         return f"{ns}__{name}"
-
-    # ---- handler registration -------------------------------------------------
 
     def _register_handlers(self) -> None:
         server = self.server
@@ -333,8 +317,6 @@ class Gateway:
                     return await session.get_prompt(child_name, arguments)
             raise ValueError(f"No child handles prompt: {name}")
 
-    # ---- cleanup --------------------------------------------------------------
-
     async def close(self) -> None:
         await self._exit_stack.aclose()
 
@@ -380,9 +362,7 @@ class Gateway:
             )
 
 
-# ===========================================================================
 # Entry point
-# ===========================================================================
 
 async def main() -> None:
     import argparse

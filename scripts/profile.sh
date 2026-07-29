@@ -8,9 +8,7 @@ set -euo pipefail
 
 echo "=== reverse-mcp profile ==="
 echo "Date: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-echo
 
-# --- Startup time ------------------------------------------------------------
 echo "--- Startup time ---"
 echo "Container uptime:"
 uptime
@@ -19,9 +17,7 @@ echo
 # Check how long each MCP child took to connect (from gateway log)
 echo "Gateway connection timestamps:"
 grep -E "connecting|connected|deferred|ready" /tmp/gateway-http.log 2>/dev/null | tail -20 || echo "  (no gateway log yet)"
-echo
 
-# --- Per-component disk usage ------------------------------------------------
 echo "--- Disk usage by component ---"
 
 du_comp() {
@@ -51,9 +47,7 @@ du_comp "BinDiff"                  /opt/tools/bindiff 2>/dev/null || echo "bindi
 du_comp "Python site-packages"     /usr/local/lib/python3*/dist-packages
 du_comp "r2pm plugins"             /home/ctf/.local/share/radare2/r2pm
 du_comp "Ghidra projects volume"   /home/ctf/.config/ghidra
-echo
 
-# --- Python package breakdown ------------------------------------------------
 echo "--- Top Python packages ---"
 pip3 list --format=columns 2>/dev/null | tail -n +3 | awk '{print $1}' | while read -r pkg; do
     pkg_path=$(python3 -c "import ${pkg//-/_}; print(${pkg//-/_}.__file__)" 2>/dev/null || true)
@@ -61,15 +55,11 @@ pip3 list --format=columns 2>/dev/null | tail -n +3 | awk '{print $1}' | while r
         du -sh "$(dirname "$pkg_path")" 2>/dev/null
     fi
 done 2>/dev/null | sort -rh | head -20 || echo "  (pip unavailable or no packages)"
-echo
 
-# --- Image layers (host only) ------------------------------------------------
 echo "--- Image size (run on host) ---"
 echo "  docker images reverse-mcp --format '{{.Size}}'"
 echo "  docker history reverse-mcp --no-trunc --format '{{.Size}}\t{{.CreatedBy}}' | head -20"
-echo
 
-# --- Memory usage ------------------------------------------------------------
 echo "--- Process memory (RSS) ---"
 ps aux --sort=-%mem 2>/dev/null | awk 'NR==1 || /gateway|ghidra|r2mcp|shell-mcp|angr|java|python/ && !/awk/' | head -10
 echo

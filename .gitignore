@@ -1,8 +1,18 @@
+# secrets
+.env
+
+# workspace
 workspace/
+
+# python
 __pycache__/
 *.pyc
+
+# os junk
 .DS_Store
 *.swp
 *~
+
+# editors
 .vscode/
 .idea/

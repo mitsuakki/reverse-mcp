@@ -42,15 +42,15 @@ When analysis completes, report:
 - Number of functions found (use `ghidra__list_functions` if available, or estimate from analysis)
 - Any warnings or errors during import
 
-## Alternative: CLI import via load-ghidra.sh
+## Alternative: CLI import via tools/ghidra/import.sh
 
 If `ghidra__import_file` is unavailable or the user prefers CLI, use the bundled script:
 
 ```
-shell__exec: /opt/tools/scripts/load-ghidra.sh /workspace/<binary> [project-name] [--no-analyze]
+shell__exec: /opt/tools/scripts/tools/ghidra/import.sh /workspace/<binary> [project-name] [--no-analyze]
 ```
 
-This script (at `scripts/load-ghidra.sh` in the repo) does three things:
+This script (at `scripts/tools/ghidra/import.sh` in the repo) does three things:
 1. Checks the headless MCP server is healthy at `:8089/health`
 2. Imports the binary via Ghidra's `analyzeHeadless` CLI
 3. Calls `/load_program` on the MCP server to make it available to the bridge
@@ -71,4 +71,4 @@ Prefer the script when:
 - The headless server runs inside the container at `http://127.0.0.1:8089`. The bridge handles the connection — you don't need to configure it.
 - Auto-analysis can take several minutes for large binaries. The import call blocks until analysis is done.
 - If the binary is already in a Ghidra project, use `ghidra__connect_instance` instead of re-importing.
-- You can also run `shell__exec: /opt/tools/scripts/load-ghidra.sh --help` to see usage directly.
+- You can also run `shell__exec: /opt/tools/scripts/tools/ghidra/import.sh --help` to see usage directly.

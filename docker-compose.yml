@@ -1,19 +1,27 @@
 services:
-  re-toolbox:
+  toolbox:
     build:
       context: .
       dockerfile: docker/Dockerfile
+      args:
+        BUILD_ANGR: ${BUILD_ANGR:-1}
+        BUILD_FUZZING: ${BUILD_FUZZING:-0}
+        BUILD_ANDROID: ${BUILD_ANDROID:-0}
     container_name: toolbox
     stdin_open: true
     tty: true
     environment:
-      - ENABLE_GHIDRA_HEADLESS_MCP=1
-      - ENABLE_GATEWAY_HTTP=1
-      - GATEWAY_HTTP_PORT=3100
-      - GHIDRA_MCP_AUTH_TOKEN=re-toolbox-dev-secret
+      - ENABLE_GATEWAY_HTTP=${ENABLE_GATEWAY_HTTP:-1}
+      - GATEWAY_HTTP_PORT=${GATEWAY_HTTP_PORT:-3100}
+      - GATEWAY_HTTP_HOST=${GATEWAY_HTTP_HOST:-0.0.0.0}
+      - GHIDRA_MCP_PORT=${GHIDRA_MCP_PORT:-8089}
+      - GHIDRA_MCP_AUTH_TOKEN=${GHIDRA_MCP_AUTH_TOKEN:-re-toolbox-dev-secret}
+      - GHIDRA_MCP_URL=${GHIDRA_MCP_URL:-http://127.0.0.1:8089}
+      - GHIDRA_INSTALL_DIR=${GHIDRA_INSTALL_DIR:-/opt/tools/ghidra}
+      - GHIDRA_PROJECTS_DIR=${GHIDRA_PROJECTS_DIR:-/home/ctf/ghidra-projects}
+      - FUZZING_DIR=${FUZZING_DIR:-/opt/tools/fuzzing}
     ports:
-      - "8089:8089"   # ghidra-mcp headless HTTP
-      - "3100:3100"   # MCP gateway — StreamableHTTP
+      - "${GATEWAY_HTTP_PORT:-3100}:${GATEWAY_HTTP_PORT:-3100}"   # MCP gateway
     volumes:
       - ./workspace:/workspace
       - ghidra-projects:/home/ctf/.config/ghidra
