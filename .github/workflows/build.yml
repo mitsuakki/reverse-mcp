@@ -7,8 +7,36 @@ on:
     branches: [main]
 
 jobs:
-  build:
+  changes:
     runs-on: ubuntu-24.04
+    outputs:
+      docker: ${{ steps.filter.outputs.docker }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Detect Docker-relevant file changes
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            docker:
+              - 'docker/**'
+              - 'scripts/**'
+              - 'docker-compose.yml'
+              - '.github/workflows/build.yml'
+
+      - name: Log change decision
+        run: |
+          if [ "${{ steps.filter.outputs.docker }}" = "true" ]; then
+            echo "Docker files changed — will build from source"
+          else
+            echo "Docker files unchanged — will pull from GHCR"
+          fi
+
+  build-or-pull:
+    runs-on: ubuntu-24.04
+    needs: changes
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -16,7 +44,8 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build
+      - name: Build image (source changed)
+        if: needs.changes.outputs.docker == 'true'
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -26,9 +55,30 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: Log in to GHCR
+        if: needs.changes.outputs.docker == 'false'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull image from GHCR
+        if: needs.changes.outputs.docker == 'false'
+        run: |
+          echo "Pulling latest image from GHCR..."
+          if docker pull "ghcr.io/${{ github.repository }}:latest" 2>/dev/null; then
+            docker tag "ghcr.io/${{ github.repository }}:latest" reverse-mcp-toolbox:latest
+            echo "Tagged as reverse-mcp-toolbox:latest"
+          else
+            echo "No image on GHCR yet — falling back to build..."
+            docker compose build
+          fi
+
   smoke-test:
     runs-on: ubuntu-24.04
-    needs: build
+    needs: [changes, build-or-pull]
+    if: always() && !cancelled() && needs.build-or-pull.result == 'success'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -50,7 +100,8 @@ jobs:
 
   android-test:
     runs-on: ubuntu-24.04
-    needs: build
+    needs: [changes, build-or-pull]
+    if: always() && !cancelled() && needs.build-or-pull.result == 'success'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -81,12 +132,13 @@ jobs:
 
   profile:
     runs-on: ubuntu-24.04
-    needs: build
+    needs: [changes, build-or-pull]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
       - name: Build image and measure
+        # Always build fresh for accurate timing/size — uses GHA cache for speed.
         run: |
           echo "=== Build timing ==="
           START=$(date +%s)
