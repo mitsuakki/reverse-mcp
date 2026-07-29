@@ -98,7 +98,8 @@ RUN --mount=type=cache,target=/root/.cache/pip \
             capstone \
             unicorn \
             pyelftools \
-            z3-solver; \
+            z3-solver \
+            fastmcp; \
     else \
         echo "=== angr: skipped (BUILD_ANGR=0) ==="; \
     fi
