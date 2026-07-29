@@ -93,10 +93,11 @@ Examples:
     # -- Set up initial state with symbolic stdin -------------------------------
     state = project.factory.entry_state()
 
-    # Make stdin symbolic (up to 256 bytes; angr will narrow as needed).
-    stdin_size = 256
+    # Make stdin symbolic. angr 9.3+ uses SimPacketsStream — each packet
+    # must fit the read size. fgets reads n-1 bytes at a time, so match that.
+    stdin_size = 63  # fgets(buf, 64, ...) reads max 63 bytes
     symbolic_stdin = claripy.BVS("stdin", stdin_size * 8)
-    state.posix.stdin.content.from_bytes(symbolic_stdin)
+    state.posix.stdin.content.append(symbolic_stdin)
 
     # -- Build simulation manager ----------------------------------------------
     simgr = project.factory.simulation_manager(state)
