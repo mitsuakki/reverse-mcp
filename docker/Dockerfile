@@ -196,6 +196,8 @@ RUN --mount=type=cache,target=/root/.m2/repository \
 # ============================================================================
 # Stage 4: fuzzing — AFL++, honggfuzz
 # BUILD_FUZZING=0 skips — saves ~200MB in final image.
+# Uses GitHub tarballs (wget) instead of git clone for reliability — git
+# protocol occasionally fails with exit 128 in BuildKit.
 # ============================================================================
 FROM base-build AS fuzzing
 
@@ -204,21 +206,30 @@ ARG BUILD_FUZZING
 ARG AFLPLUSPLUS_VERSION=v5.00c
 ARG HONGGFUZZ_VERSION=2.6
 
-RUN mkdir -p /opt/tools/fuzzing/bin \
-    && if [ "${BUILD_FUZZING}" = "0" ]; then \
+RUN if [ "${BUILD_FUZZING}" = "0" ]; then \
          echo "=== fuzzing: skipped (BUILD_FUZZING=0) ==="; \
+         mkdir -p /opt/tools/fuzzing/bin; \
          exit 0; \
-       fi \
-    && echo "=== Building AFL++ ${AFLPLUSPLUS_VERSION} ===" \
-    && git clone --depth 1 --branch ${AFLPLUSPLUS_VERSION} \
-            https://github.com/AFLplusplus/AFLplusplus /opt/tools/AFLplusplus-src \
+       fi
+
+RUN echo "=== Building AFL++ ${AFLPLUSPLUS_VERSION} ===" \
+    && mkdir -p /opt/tools/fuzzing/bin \
+    && wget -q -O /tmp/afl.tar.gz \
+        "https://github.com/AFLplusplus/AFLplusplus/archive/refs/tags/${AFLPLUSPLUS_VERSION}.tar.gz" \
+    && tar -xzf /tmp/afl.tar.gz -C /opt/tools \
+    && mv "/opt/tools/AFLplusplus-${AFLPLUSPLUS_VERSION#v}" /opt/tools/AFLplusplus-src \
+    && rm /tmp/afl.tar.gz \
     && cd /opt/tools/AFLplusplus-src \
     && make distrib -j"$(nproc)" \
     && PREFIX=/opt/tools/fuzzing make install \
-    && rm -rf /opt/tools/AFLplusplus-src \
-    && echo "=== Building honggfuzz ${HONGGFUZZ_VERSION} ===" \
-    && git clone --depth 1 --branch ${HONGGFUZZ_VERSION} \
-            https://github.com/google/honggfuzz /opt/tools/honggfuzz-src \
+    && rm -rf /opt/tools/AFLplusplus-src
+
+RUN echo "=== Building honggfuzz ${HONGGFUZZ_VERSION} ===" \
+    && wget -q -O /tmp/honggfuzz.tar.gz \
+        "https://github.com/google/honggfuzz/archive/refs/tags/${HONGGFUZZ_VERSION}.tar.gz" \
+    && tar -xzf /tmp/honggfuzz.tar.gz -C /opt/tools \
+    && mv "/opt/tools/honggfuzz-${HONGGFUZZ_VERSION}" /opt/tools/honggfuzz-src \
+    && rm /tmp/honggfuzz.tar.gz \
     && cd /opt/tools/honggfuzz-src \
     && make -j"$(nproc)" \
     && PREFIX=/opt/tools/fuzzing make install \
