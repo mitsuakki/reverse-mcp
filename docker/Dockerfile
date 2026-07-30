@@ -22,7 +22,7 @@ ENV LANG=C.UTF-8 \
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     apt-get update && apt-get install -y --no-install-recommends \
         git curl wget ca-certificates gnupg sudo \
-        python3 python3-pip python3-venv pipx \
+        python3 python3-pip python3-venv python3-pygments pipx \
         file binutils unzip xz-utils zlib1g-dev libssl-dev \
         openjdk-21-jdk-headless \
         gdb gdb-multiarch lldb \

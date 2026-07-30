@@ -83,7 +83,7 @@ _run() {
     output="$(eval "$cmd" 2>&1)" && rc=$? || rc=$?
     if [[ $rc -ne 0 ]]; then
         _fail "$label" "exit=$rc"
-        _verbose "$output"
+        echo "         $output" >&2
         return 1
     fi
     _pass "$label"
@@ -97,7 +97,7 @@ _check_output() {
     output="$(eval "$cmd" 2>&1)" && rc=$? || rc=$?
     if [[ $rc -ne 0 ]]; then
         _fail "$label" "exit=$rc"
-        _verbose "$output"
+        echo "         $output" >&2
         return 1
     fi
     if echo "$output" | grep -iq "$expected"; then
