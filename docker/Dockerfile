@@ -263,6 +263,7 @@ RUN mkdir -p /opt/tools/platform-tools /opt/tools/jadx/bin \
     && wget -q -O /tmp/jadx.zip \
         "https://github.com/skylot/jadx/releases/download/v${JADX_VER}/jadx-${JADX_VER}.zip" \
     && unzip -q /tmp/jadx.zip -d /opt/tools/jadx \
+    && chmod +x /opt/tools/jadx/bin/jadx /opt/tools/jadx/bin/jadx-gui 2>/dev/null || true \
     && rm /tmp/jadx.zip
 
 
@@ -305,11 +306,18 @@ COPY --from=android /opt/tools/jadx /opt/tools/jadx
 # apktool wrapper + jadx symlinks (only if android was actually built)
 RUN if [ -s /opt/tools/apktool.jar ]; then \
         printf '#!/bin/sh\nexec java -jar /opt/tools/apktool.jar "$@"\n' > /usr/local/bin/apktool \
-        && chmod +x /usr/local/bin/apktool; \
-    fi \
-    && if [ -x /opt/tools/jadx/bin/jadx ]; then \
+        && chmod +x /usr/local/bin/apktool \
+        && echo "apktool wrapper installed"; \
+    else \
+        echo "apktool: skipped (jar empty or missing)"; \
+    fi
+
+RUN if [ -x /opt/tools/jadx/bin/jadx ]; then \
         ln -sf /opt/tools/jadx/bin/jadx /usr/local/bin/jadx \
-        && ln -sf /opt/tools/jadx/bin/jadx-gui /usr/local/bin/jadx-gui; \
+        && ln -sf /opt/tools/jadx/bin/jadx-gui /usr/local/bin/jadx-gui \
+        && echo "jadx symlinks installed"; \
+    else \
+        echo "jadx: skipped (binary not found)"; \
     fi
 
 # --- Environment ------------------------------------------------------------
