@@ -157,29 +157,6 @@ add a `toolbox` entry matching your client's config format:
 
 Restart the client after editing.
 
-### Architecture
-
-```
-MCP client
-  │  HTTP POST /mcp
-  ▼
-localhost:3100
-  │
-  ▼
-┌─────────────────────────────────────────┐
-│ toolbox container                       │
-│                                         │
-│  gateway.py --transport http :3100      │
-│    ├─ r2pm -r r2mcp          → r2__*    │
-│    ├─ bridge_mcp_ghidra.py   → ghidra__*│
-│    ├─ shell-mcp.py            → shell__*│
-│    └─ python3 -m angr.mcp     → angr__* │
-└─────────────────────────────────────────┘
-```
-
-Gateway auto-starts all child servers at boot. Tools are namespaced so they never collide. 
-Failed children don't block the gateway; it degrades with whatever connected.
-
 ### Server catalog
 
 | Namespace | Server | Tools |
