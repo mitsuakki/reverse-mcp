@@ -344,36 +344,6 @@ docker exec toolbox ps aux | grep -E "gateway|ghidra|r2mcp|shell-mcp|angr"
 
 `docker compose down -v` wipes the Ghidra project volume for a clean state.
 
-## Project structure
-
-```
-.
-├── .mcp.json                    MCP config — single HTTP entry
-├── CLAUDE.md                    Agent reference + quickstart
-├── docker-compose.yml
-├── docker/
-│   └── Dockerfile               Multi-stage build, pinned versions
-├── scripts/
-│   ├── common/                    Shared argument parsing helpers
-│   ├── mcp/                       MCP server implementations
-│   │   ├── gateway.py            Composes all MCP servers behind one endpoint
-│   │   └── shell-mcp.py          Shell command MCP server
-│   ├── tools/                     Tool-specific CLI helpers
-│   │   ├── angr/solve.py         Symbolic execution helper
-│   │   ├── fuzz/init.sh          Fuzzing campaign initializer
-│   │   └── ghidra/
-│   │       ├── lazy-start.sh     Ghidra headless lazy-start wrapper
-│   │       └── import.sh         CLI binary import into Ghidra
-│   ├── tests/                     Test scripts
-│   │   └── smoke-test.sh         MCP server integration smoke test
-│   ├── entrypoint.sh              Container entrypoint
-│   └── profile.sh                 Resource usage profiler
-├── .claude/
-│   ├── agents/                  RE agents (auto-loaded by Claude Code)
-│   └── settings.json            Project MCP config
-└── workspace/                   Mounted at /workspace — put binaries here
-```
-
 ## Security
 
 See [⚠️ Security warning](#security-warning) above. Container capabilities,
